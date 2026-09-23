@@ -82,6 +82,7 @@ def run_viewport(browser, base, label, viewport):
         return reply(route, 404, {'error': f'unmocked {method} {path}'})
 
     page = browser.new_page(viewport=viewport)
+    page.add_init_script("window.__printCount = 0; window.print = () => { window.__printCount += 1 }")
     errors = []
     page.on('pageerror', lambda error: errors.append(str(error)))
     page.route('**/api/**', api)
@@ -104,6 +105,28 @@ def run_viewport(browser, base, label, viewport):
     assert page.locator('.daily-panel .entry').count() == 1
     assert page.get_by_role('button', name='Edit').count() == 0
     assert page.get_by_role('button', name='Padam').count() == 0
+    assert page.get_by_role('button', name='Muat turun Excel (CSV)').count() == 0
+    assert page.get_by_role('button', name='Cetak / Simpan PDF').count() == 0
+    name_trigger = page.get_by_role('button', name='Cikgu Ujian')
+    name_trigger.click()
+    page.get_by_role('heading', name='Kad Kehadiran').wait_for()
+    assert page.locator('.profile-card').get_by_text('Cuti', exact=True).count() >= 1
+    assert page.locator('.profile-card').get_by_text('Tiada di sekolah', exact=True).count() == 1
+    assert page.locator('.profile-card').get_by_role('button', name='Edit').count() == 0
+    assert page.locator('.profile-card').get_by_role('button', name='Padam').count() == 0
+    page.screenshot(path=f'/tmp/keberadaan-hero-card-{label}.png', full_page=True)
+    page.keyboard.press('Escape')
+    assert page.evaluate("document.activeElement?.textContent?.trim() === 'Cikgu Ujian'")
+    page.locator('.metric[data-status="MC"]').click()
+    assert page.get_by_text('Tiada rekod sepadan.').count() == 1
+    page.locator('.metric[data-status="CUTI"]').click()
+    assert page.locator('.daily-panel .entry').count() == 1
+    page.get_by_label('Cari nama dalam rekod').fill('tiada')
+    assert page.get_by_text('Tiada rekod sepadan.').count() == 1
+    page.get_by_label('Cari nama dalam rekod').fill('ujian')
+    assert page.locator('.daily-panel .entry').count() == 1
+    page.get_by_label('Cari nama dalam rekod').fill('')
+    page.locator('.metric[data-status="ALL"]').click()
     public_dashboard_fetches = sum(method == 'GET' and path == '/api/dashboard' for method, path, _ in calls)
     page.wait_for_timeout(15_200)
     assert sum(method == 'GET' and path == '/api/dashboard' for method, path, _ in calls) > public_dashboard_fetches
@@ -115,6 +138,16 @@ def run_viewport(browser, base, label, viewport):
     page.get_by_text('Cikgu Ujian').wait_for()
     assert page.get_by_role('button', name='Edit').count() == 1
     assert page.get_by_role('button', name='Padam').count() == 1
+    for name in ['Muat turun Excel (CSV)', 'Cetak / Simpan PDF']:
+        assert page.get_by_role('button', name=name).evaluate('(element) => element.getBoundingClientRect().right <= window.innerWidth')
+    page.get_by_role('button', name='Cetak / Simpan PDF').click()
+    assert page.evaluate('window.__printCount') == 1
+    with page.expect_download() as download_info:
+        page.get_by_role('button', name='Muat turun Excel (CSV)').click()
+    download = download_info.value
+    assert download.suggested_filename.endswith('.csv')
+    csv = Path(download.path()).read_text(encoding='utf-8-sig')
+    assert 'Nama staf' in csv and 'Cikgu Ujian' in csv and 'Cuti' in csv
     dashboard_fetches = sum(method == 'GET' and path == '/api/admin/dashboard' for method, path, _ in calls)
     page.wait_for_timeout(15_200)
     assert sum(method == 'GET' and path == '/api/admin/dashboard' for method, path, _ in calls) > dashboard_fetches
@@ -142,17 +175,21 @@ def run_viewport(browser, base, label, viewport):
     page.locator('#edit-status').select_option('MC')
     page.locator('.sheet .save').click()
     page.get_by_text('Rekod disimpan.').wait_for()
-    page.once('dialog', lambda dialog: dialog.accept())
-    page.get_by_role('button', name='Padam').click()
-    page.get_by_text('Rekod kehadiran telah dipadam.').wait_for()
-    assert page.get_by_text('Tiada rekod bagi tarikh ini.').count() == 1
-
     page.get_by_role('button', name='Laporan').click()
     page.get_by_role('heading', name='Laporan bulanan').wait_for()
+    assert page.get_by_text('Laporan visual').count() == 1
+    assert page.locator('.report-bars .report-bar').count() == 5
+    page.screenshot(path=f'/tmp/keberadaan-monthly-visual-{label}.png', full_page=True)
     report_month = page.locator('.report-panel .mini-field input[type=month]')
     assert report_month.evaluate('(element) => element.getBoundingClientRect().height >= 44')
     report_month.fill('')
     page.get_by_role('heading', name='Laporan bulanan').wait_for()
+
+    page.get_by_role('button', name='Hari ini').click()
+    page.once('dialog', lambda dialog: dialog.accept())
+    page.get_by_role('button', name='Padam').click()
+    page.get_by_text('Rekod kehadiran telah dipadam.').wait_for()
+    assert page.get_by_text('Tiada rekod bagi tarikh ini.').count() == 1
     assert page.evaluate('document.documentElement.scrollWidth <= document.documentElement.clientWidth')
     assert not errors, errors
     page.close()

@@ -226,10 +226,20 @@ textarea:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; 
 .mini-field input { width: 100%; min-height: 44px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: var(--ink); padding: 0 8px; }
 
 .summary { display: grid; grid-template-columns: repeat(3, 1fr); border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
-.metric { padding: 13px 11px; border-right: 1px solid var(--line); }
-.metric:last-child { border: 0; }
+.metric { min-width: 0; padding: 13px 11px; border: 0; border-right: 1px solid var(--line); background: var(--surface); color: var(--ink); text-align: left; }
+.metric:last-child { border-right: 0; }
 .metric b { display: block; font-size: 22px; line-height: 1; }
 .metric span { color: var(--muted); font-size: 13px; }
+.metric[data-active='true'] { background: color-mix(in srgb, var(--primary) 14%, var(--surface)); }
+.metric[data-active='true'] span { color: var(--primary); font-weight: 850; }
+.metric[data-status='MC'] b { color: var(--red); }
+.metric[data-status='KURSUS'] b { color: var(--violet); }
+.metric[data-status='URUSAN_RASMI'] b { color: var(--accent); }
+.metric[data-status='CUTI'] b { color: var(--green); }
+.dashboard-tools { display: flex; flex-wrap: wrap; gap: 9px; padding: 12px 17px; border-bottom: 1px solid var(--line); background: color-mix(in srgb, var(--surface-2) 52%, var(--surface)); }
+.dashboard-tools > input { width: 100%; min-height: 44px; border: 1px solid var(--line); border-radius: 9px; background: var(--surface); color: var(--ink); padding: 0 12px; }
+.export-actions { display: flex; width: 100%; gap: 8px; }
+.export-actions .text-button { flex: 1; white-space: nowrap; }
 
 .list,
 .staff-list { margin: 0; padding: 0; list-style: none; }
@@ -237,7 +247,9 @@ textarea:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; 
 .entry { gap: 12px; padding: 13px 17px; border-bottom: 1px solid var(--line); }
 .entry:last-child { border: 0; }
 .entry > div { min-width: 0; }
-.entry b { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 15px; }
+.entry-name { max-width: 100%; margin: 0; padding: 0; border: 0; background: transparent; color: var(--ink); font: inherit; text-align: left; }
+.entry-name:hover { color: var(--primary); text-decoration: underline; text-underline-offset: 3px; }
+.entry-name b { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 15px; }
 .entry small { display: block; color: var(--muted); font-size: 13px; }
 .empty-entry,
 .state-message { padding: 18px 17px; color: var(--body); }
@@ -312,6 +324,18 @@ textarea:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; 
 .correction-guide .admin-action { margin: 0 17px; }
 
 .report-panel { margin-top: 16px; }
+.report-visual { display: grid; gap: 16px; padding: 17px; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); background: color-mix(in srgb, var(--surface-2) 48%, var(--surface)); }
+.report-visual h3 { margin: 0; font-size: 16px; }
+.report-visual span { color: var(--muted); font-size: 13px; }
+.report-bars { display: grid; gap: 10px; }
+.report-bar { display: grid; grid-template-columns: 106px minmax(0, 1fr) 28px; align-items: center; gap: 9px; font-size: 13px; font-weight: 800; }
+.report-track { height: 10px; overflow: hidden; border-radius: 999px; background: var(--line); }
+.report-track i { display: block; height: 100%; border-radius: inherit; background: var(--primary); }
+.report-bar[data-status='MC'] .report-track i { background: var(--red); }
+.report-bar[data-status='KURSUS'] .report-track i { background: var(--violet); }
+.report-bar[data-status='URUSAN_RASMI'] .report-track i { background: var(--accent); }
+.report-bar[data-status='CUTI'] .report-track i { background: var(--green); }
+.report-bar b { text-align: right; font-variant-numeric: tabular-nums; }
 .report-table-wrap { overflow-x: auto; }
 table { width: 100%; border-collapse: collapse; table-layout: fixed; text-align: left; }
 th,
@@ -348,6 +372,20 @@ th:last-child { text-align: right; font-variant-numeric: tabular-nums; }
 .state[aria-pressed='true'] { border: 2px solid var(--primary); background: var(--surface-2); }
 .state:last-child { grid-column: 1 / -1; }
 .save { width: 100%; min-height: 54px; margin-top: 7px; border: 0; border-radius: 11px; background: var(--primary); color: var(--primary-ink); font-size: 16px; font-weight: 850; }
+.profile-card { display: grid; gap: 18px; }
+.profile-card .sheet-top { margin-bottom: 0; }
+.profile-identity { display: flex; align-items: center; gap: 15px; padding: 4px 0 18px; border-bottom: 1px solid var(--line); }
+.profile-monogram { display: grid; width: 76px; height: 76px; flex: 0 0 76px; place-items: center; border-radius: 24px; background: color-mix(in srgb, var(--primary) 18%, var(--surface-2)); color: var(--primary); font-size: 27px; font-weight: 900; letter-spacing: -.06em; }
+.profile-monogram[data-status='MC'] { background: color-mix(in srgb, var(--red) 16%, var(--surface-2)); color: var(--red); }
+.profile-monogram[data-status='KURSUS'] { background: color-mix(in srgb, var(--violet) 16%, var(--surface-2)); color: var(--violet); }
+.profile-monogram[data-status='URUSAN_RASMI'] { background: color-mix(in srgb, var(--accent) 18%, var(--surface-2)); color: var(--accent); }
+.profile-monogram[data-status='CUTI'] { background: color-mix(in srgb, var(--green) 16%, var(--surface-2)); color: var(--green); }
+.profile-identity .kicker { margin: 0 0 4px; }
+.profile-identity h3 { margin: 0 0 9px; font-size: 22px; letter-spacing: -.03em; }
+.profile-details { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin: 0; }
+.profile-details div { min-width: 0; padding: 13px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface-2); }
+.profile-details dt { color: var(--muted); font-size: 12px; font-weight: 800; }
+.profile-details dd { margin: 4px 0 0; font-size: 14px; font-weight: 800; }
 
 .visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 
@@ -355,6 +393,11 @@ th:last-child { text-align: right; font-variant-numeric: tabular-nums; }
   .app { padding: 26px 26px 56px; }
   .hero { margin-top: 28px; padding: 30px; }
   .layout { grid-template-columns: minmax(0, 1.75fr) minmax(250px, .8fr); }
+  .summary { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+  .dashboard-tools { align-items: center; }
+  .dashboard-tools > input { flex: 1 1 240px; width: auto; }
+  .export-actions { width: auto; }
+  .export-actions .text-button { flex: 0 0 auto; }
   .aside { height: fit-content; }
   .admin-grid { grid-template-columns: minmax(280px, .9fr) minmax(0, 1.4fr); }
   .sheet { left: auto; width: min(520px, calc(100% - 32px)); border-radius: 22px; right: 18px; }
@@ -368,9 +411,30 @@ th:last-child { text-align: right; font-variant-numeric: tabular-nums; }
   .entry { flex-wrap: wrap; }
   .entry > div { flex: 1 1 150px; }
   .entry-actions { margin-left: 22px; }
+  .export-actions { display: grid; grid-template-columns: 1fr; }
+  .export-actions .text-button { white-space: normal; }
   .staff-row { flex-wrap: wrap; }
   .staff-row input { flex-basis: 100%; }
   .staff-row .text-button { flex: 1 1 auto; }
+}
+
+@media print {
+  :root,
+  body { background: #fff; color: #111; }
+  .topbar,
+  .hero,
+  .fab,
+  .week,
+  .notice,
+  .aside,
+  .dashboard-tools,
+  .entry-actions,
+  .admin-grid,
+  .report-panel { display: none !important; }
+  .app { width: 100%; padding: 0; }
+  .layout { display: block; }
+  .daily-panel { border-color: #111; border-radius: 0; }
+  .metric { border-color: #bbb; }
 }
 
 @media (prefers-reduced-motion: reduce) {

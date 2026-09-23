@@ -7,7 +7,7 @@ const [app, css] = await Promise.all([
   readFile(new URL('src/App.css', root), 'utf8'),
 ])
 
-for (const control of ['fab', 'week', 'date', 'summary', 'metric', 'list', 'entry', 'aside', 'sheet', 'states', 'state']) {
+for (const control of ['fab', 'week', 'date', 'summary', 'metric', 'list', 'entry', 'entry-name', 'dashboard-tools', 'status-filter', 'aside', 'sheet', 'profile-card', 'states', 'state', 'report-bars', 'report-bar', 'export-actions']) {
   assert.match(`${app}\n${css}`, new RegExp(`\\.${control}|className=["\\"][^"\\"]*${control}`), `missing Proof V3 ${control} control`)
 }
 for (const endpoint of ['/api/staff', '/api/dashboard?', '/api/exceptions', '/api/admin/login', '/api/admin/logout', '/api/admin/dashboard?', '/api/admin/staff', '/api/admin/import', '/api/admin/report?', '/api/admin/exceptions']) {
@@ -26,6 +26,14 @@ assert.match(app, /credentials: 'include'/)
 assert.match(app, /function validDate/)
 assert.match(app, /event\.key === 'Tab'/)
 assert.match(app, /function closeEditing/)
+assert.match(app, /function closeProfile/)
+assert.match(app, /Muat turun Excel \(CSV\)/)
+assert.match(app, /Cetak \/ Simpan PDF/)
+assert.match(app, /Cari nama dalam rekod/)
+assert.match(app, /Laporan visual/)
+assert.match(app, /function exportDailyCsv/)
+assert.match(app, /\^\[=\+\\-@\]/)
+assert.match(app, /window\.print\(\)/)
 assert.match(css, /\.mini-field input \{[^}]*min-height: 44px/s)
 assert.doesNotMatch(app, /Cikgu Hana Ramli|Cikgu Farid Hakim|Puan Noraini Binti Hassan|rekod contoh/)
 console.log('V3_UI_CONTRACT_PASS')

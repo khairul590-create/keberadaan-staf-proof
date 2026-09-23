@@ -9,19 +9,19 @@ V1 berjaya apabila seorang staf boleh memilih namanya, memasukkan status dan tar
 
 | User | Read | Create | Update | Delete |
 |---|---|---|---|---|
-| Staf (tanpa login) | Papan harian: nama, status, tarikh | Satu rekod keberadaan bagi nama/tarikh yang dipilih | Tiada | Tiada |
-| Pentadbir (satu PIN bersama) | Semua rekod, ringkasan harian, laporan bulanan | Rekod bagi pihak staf; staf baharu | Betulkan rekod dan roster | Padam rekod dengan audit |
+| Staf (tanpa login) | Papan harian: nama, status, tarikh, Hero Card | Satu rekod keberadaan bagi nama/tarikh yang dipilih | Tiada | Tiada |
+| Pentadbir (satu PIN bersama) | Semua rekod, ringkasan harian, laporan visual bulanan | Rekod bagi pihak staf; staf baharu | Betulkan rekod dan roster | Padam rekod dengan audit |
 
 ## Core journeys
-1. Staf buka URL → lihat papan hari ini → cari nama → pilih status + tarikh → hantar → lihat rekod yang sama pada papan.
-2. Pentadbir masukkan PIN → lihat papan hari ini → buka rekod → betulkan status/tarikh atau padam dengan confirmation.
-3. Pentadbir import CSV roster → semak staf aktif → lihat laporan bulanan mengikut staf dan status.
+1. Staf buka URL → lihat/tapis/cari papan hari ini → tekan nama untuk Hero Card → pilih nama sendiri → status + tarikh → hantar → lihat rekod yang sama pada papan.
+2. Pentadbir masukkan PIN → lihat papan hari ini → muat turun Excel-compatible CSV atau Cetak/Save PDF → buka rekod → betulkan status/tarikh atau padam dengan confirmation.
+3. Pentadbir import CSV roster → semak staf aktif → lihat laporan bulanan visual mengikut status dan jadual staf.
 
 ## V1 modules
-- Borang staf tanpa login dan papan harian bersama untuk semua staf.
-- Dashboard pentadbir: ringkasan hari ini, pembetulan dan pemadaman rekod diaudit.
+- Borang staf tanpa login dan papan harian bersama: Hero Card read-only, carian nama serta filter status.
+- Dashboard pentadbir: ringkasan hari ini, Excel-compatible CSV, Print/Save PDF, pembetulan dan pemadaman rekod diaudit.
 - Roster staf: import CSV dan tambah/edit staf.
-- Laporan bulanan ringkas.
+- Laporan bulanan jadual + visual status native CSS.
 - Audit rekod: masa cipta, kemas kini dan pemadaman; sumber staf atau pentadbir.
 
 ## Explicit V1 boundary

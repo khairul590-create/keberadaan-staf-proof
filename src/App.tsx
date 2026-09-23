@@ -7,6 +7,7 @@ const WEEKDAY_LABELS = ['A', 'I', 'S', 'R', 'K', 'J', 'S']
 
 type Status = (typeof STATUSES)[number]
 type SelectedStatus = Status | ''
+type StatusFilter = Status | 'ALL'
 type AdminTab = 'dashboard' | 'roster' | 'correction' | 'report'
 type Notice = { tone: 'error' | 'success'; text: string }
 type Staff = { id: string; name: string; active?: boolean }
@@ -52,6 +53,16 @@ function weekDates(selectedDate: string) {
     date.setDate(start.getDate() + index)
     return { date: dateInput(date), day: weekday, number: date.getDate() }
   })
+}
+
+function initials(name: string) {
+  return name.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]?.toLocaleUpperCase('ms-MY')).join('') || 'S'
+}
+
+function csvCell(value: string | number) {
+  const text = String(value)
+  const safe = /^[=+\-@]/.test(text) ? `'${text}` : text
+  return `"${safe.replaceAll('"', '""')}"`
 }
 
 function dateCaption(date: string) {
@@ -101,6 +112,9 @@ function App() {
   const [dashboardDate, setDashboardDate] = useState(today)
   const [records, setRecords] = useState<ExceptionRecord[]>([])
   const [dashboardBusy, setDashboardBusy] = useState(false)
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>('ALL')
+  const [recordSearch, setRecordSearch] = useState('')
+  const [profileRecord, setProfileRecord] = useState<ExceptionRecord | null>(null)
   const [newStaffName, setNewStaffName] = useState('')
   const [importNames, setImportNames] = useState('')
   const [staffBusy, setStaffBusy] = useState('')
@@ -115,16 +129,24 @@ function App() {
   const publicTrigger = useRef<HTMLButtonElement>(null)
   const adminTrigger = useRef<HTMLButtonElement>(null)
   const editTrigger = useRef<HTMLElement | null>(null)
+  const profileTrigger = useRef<HTMLButtonElement | null>(null)
 
   const activeStaff = useMemo(() => staff.filter((item) => item.active !== false), [staff])
   const selectedDate = admin ? dashboardDate : publicDate
   const week = useMemo(() => weekDates(selectedDate), [selectedDate])
   const publicReady = staffState === 'ready' && activeStaff.length > 0
-  const metricItems = [
-    { label: 'Jumlah rekod', total: records.length },
-    { label: 'Tidak hadir', total: records.filter((record) => record.status !== 'KELUAR_SEMENTARA').length },
-    { label: 'Keluar sementara', total: records.filter((record) => record.status === 'KELUAR_SEMENTARA').length },
-  ]
+  const metricItems = useMemo(() => [
+    { status: 'ALL' as const, label: 'Semua', total: records.length },
+    ...STATUSES.map((status) => ({ status, label: statusLabel[status], total: records.filter((record) => record.status === status).length })),
+  ], [records])
+  const visibleRecords = useMemo(() => {
+    const query = recordSearch.trim().toLocaleUpperCase('ms-MY')
+    return records.filter((record) => (statusFilter === 'ALL' || record.status === statusFilter) && (!query || record.staffName.toLocaleUpperCase('ms-MY').includes(query)))
+  }, [recordSearch, records, statusFilter])
+  const reportVisual = useMemo(() => {
+    const totals = STATUSES.map((status) => ({ status, total: reportRows.filter((row) => row.status === status).reduce((sum, row) => sum + Number(row.total), 0) }))
+    return { total: totals.reduce((sum, item) => sum + item.total, 0), max: Math.max(1, ...totals.map((item) => item.total)), totals }
+  }, [reportRows])
 
   async function loadStaff(adminView = false) {
     setStaffState('loading')
@@ -195,7 +217,7 @@ function App() {
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
-      if (event.key === 'Tab' && (editing || publicOpen || adminOpen)) {
+      if (event.key === 'Tab' && (profileRecord || editing || publicOpen || adminOpen)) {
         const dialog = document.querySelector<HTMLElement>('.sheet[role="dialog"]')
         const focusable = dialog ? [...dialog.querySelectorAll<HTMLElement>('button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [href]')] : []
         if (!focusable.length) return
@@ -211,6 +233,10 @@ function App() {
         return
       }
       if (event.key !== 'Escape') return
+      if (profileRecord) {
+        closeProfile()
+        return
+      }
       if (editing) {
         closeEditing()
         return
@@ -227,7 +253,7 @@ function App() {
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [adminOpen, editing, publicOpen])
+  }, [adminOpen, editing, profileRecord, publicOpen])
 
   async function submitPublic(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -440,6 +466,28 @@ function App() {
     setEditing(null)
   }
 
+  function closeProfile() {
+    setProfileRecord(null)
+    profileTrigger.current?.focus()
+  }
+
+  function exportDailyCsv() {
+    if (!admin) return
+    const rows = [
+      ['SK Darau', 'Ringkasan Kehadiran', dashboardDate],
+      [],
+      ['Bil.', 'Nama staf', 'Status', 'Keterangan', 'Tarikh'],
+      ...records.map((record, index) => [index + 1, record.staffName, statusLabel[record.status], statusDetail[record.status], record.date]),
+    ]
+    const csv = `\ufeff${rows.map((row) => row.map(csvCell).join(',')).join('\r\n')}`
+    const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }))
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `ringkasan-kehadiran-${dashboardDate}.csv`
+    link.click()
+    window.setTimeout(() => URL.revokeObjectURL(url), 0)
+  }
+
   const notice = admin ? adminNotice : publicNotice
 
   return (
@@ -482,10 +530,15 @@ function App() {
               <div><h2 id="daily-title">Keberadaan hari ini</h2><span>{`${records.length} rekod · auto-refresh 15 saat`}</span></div>
               {admin && <label className="mini-field">Tarikh<input type="date" value={dashboardDate} onChange={(event) => chooseDate(event.target.value)} /></label>}
             </div>
-            <div className="summary">
-              {metricItems.map((item) => <div className="metric" key={item.label}><b>{item.total}</b><span>{item.label}</span></div>)}
+            <div className="summary status-filter" aria-label="Tapis rekod mengikut status">
+              {metricItems.map((item) => <button className="metric" data-active={statusFilter === item.status} data-status={item.status} key={item.status} type="button" aria-pressed={statusFilter === item.status} onClick={() => setStatusFilter(item.status)}><b>{item.total}</b><span>{item.label}</span></button>)}
             </div>
-            {dashboardBusy ? <div className="state-message" role="status">Memuatkan rekod…</div> : <ul className="list">{records.length === 0 ? <li className="empty-entry">Tiada rekod bagi tarikh ini.</li> : records.map((record) => <li className="entry" key={record.id}><i className="dot" data-status={record.status} aria-hidden="true" /><div><b>{record.staffName}</b><small>{statusLabel[record.status]} · {record.date}</small></div><span className="pill" data-status={record.status}>{statusLabel[record.status]}</span>{admin && <div className="entry-actions"><button className="entry-edit" type="button" onClick={(event) => { editTrigger.current = event.currentTarget; setEditing(record) }}>Edit</button><button className="entry-delete" type="button" disabled={correctionBusy} onClick={() => void removeException(record)}>Padam</button></div>}</li>)}</ul>}
+            <div className="dashboard-tools">
+              <label className="visually-hidden" htmlFor="record-search">Cari nama dalam rekod</label>
+              <input id="record-search" type="search" value={recordSearch} onChange={(event) => setRecordSearch(event.target.value)} placeholder="Cari nama dalam rekod" />
+              {admin && <div className="export-actions"><button className="text-button" type="button" onClick={exportDailyCsv}>Muat turun Excel (CSV)</button><button className="text-button" type="button" onClick={() => window.print()}>Cetak / Simpan PDF</button></div>}
+            </div>
+            {dashboardBusy ? <div className="state-message" role="status">Memuatkan rekod…</div> : <ul className="list">{visibleRecords.length === 0 ? <li className="empty-entry">{records.length === 0 ? 'Tiada rekod bagi tarikh ini.' : 'Tiada rekod sepadan.'}</li> : visibleRecords.map((record) => <li className="entry" key={record.id}><i className="dot" data-status={record.status} aria-hidden="true" /><div><button className="entry-name" type="button" onClick={(event) => { profileTrigger.current = event.currentTarget; setProfileRecord(record) }}><b>{record.staffName}</b></button><small>{statusLabel[record.status]} · {record.date}</small></div><span className="pill" data-status={record.status}>{statusLabel[record.status]}</span>{admin && <div className="entry-actions"><button className="entry-edit" type="button" onClick={(event) => { editTrigger.current = event.currentTarget; setEditing(record) }}>Edit</button><button className="entry-delete" type="button" disabled={correctionBusy} onClick={() => void removeException(record)}>Padam</button></div>}</li>)}</ul>}
           </section>
 
           <aside className="panel aside">
@@ -550,7 +603,7 @@ function App() {
 
         {admin && adminTab === 'report' && <section className="panel admin-panel report-panel" aria-labelledby="report-title">
           <div className="panel-title"><div><h2 id="report-title">Laporan bulanan</h2><span>Jumlah rekod mengikut staf dan status</span></div><label className="mini-field">Bulan<input type="month" value={reportMonth} onChange={(event) => { if (!event.target.value) return; setReportMonth(event.target.value); void loadReport(event.target.value) }} /></label></div>
-          {reportBusy ? <div className="state-message" role="status">Memuatkan laporan…</div> : reportRows.length === 0 ? <div className="state-message">Tiada data laporan untuk bulan ini.</div> : <div className="report-table-wrap"><table><thead><tr><th scope="col">Staf</th><th scope="col">Status</th><th scope="col">Jumlah</th></tr></thead><tbody>{reportRows.map((row) => <tr key={`${row.staffName}-${row.status}`}><td>{row.staffName}</td><td><span className="pill" data-status={row.status}>{statusLabel[row.status]}</span></td><td>{row.total}</td></tr>)}</tbody></table></div>}
+          {reportBusy ? <div className="state-message" role="status">Memuatkan laporan…</div> : reportRows.length === 0 ? <div className="state-message">Tiada data laporan untuk bulan ini.</div> : <><section className="report-visual" aria-labelledby="report-visual-title"><div><h3 id="report-visual-title">Laporan visual</h3><span>{reportVisual.total} rekod bagi bulan ini</span></div><div className="report-bars">{reportVisual.totals.map((item) => <div className="report-bar" data-status={item.status} key={item.status}><span>{statusLabel[item.status]}</span><div className="report-track"><i style={{ width: `${(item.total / reportVisual.max) * 100}%` }} /></div><b>{item.total}</b></div>)}</div></section><div className="report-table-wrap"><table><thead><tr><th scope="col">Staf</th><th scope="col">Status</th><th scope="col">Jumlah</th></tr></thead><tbody>{reportRows.map((row) => <tr key={`${row.staffName}-${row.status}`}><td>{row.staffName}</td><td><span className="pill" data-status={row.status}>{statusLabel[row.status]}</span></td><td>{row.total}</td></tr>)}</tbody></table></div></>}
         </section>}
       </main>
 
@@ -575,6 +628,13 @@ function App() {
           {adminNotice?.tone === 'error' && <div className="notice error" role="alert">{adminNotice.text}</div>}
           <button className="save" type="submit" disabled={loginBusy}>{loginBusy ? 'Menyemak…' : 'Masuk ke pentadbir'}</button>
         </form>
+      </section></>}
+
+      {profileRecord && <><div className="scrim visible" onClick={closeProfile} aria-hidden="true" /><section className="sheet profile-card" role="dialog" aria-modal="true" aria-labelledby="profile-title">
+        <div className="handle" />
+        <div className="sheet-top"><h2 id="profile-title">Kad Kehadiran</h2><button className="close" type="button" autoFocus aria-label="Tutup kad kehadiran" onClick={closeProfile}>×</button></div>
+        <div className="profile-identity"><div className="profile-monogram" data-status={profileRecord.status} aria-hidden="true">{initials(profileRecord.staffName)}</div><div><p className="kicker">Rekod kehadiran</p><h3>{profileRecord.staffName}</h3><span className="pill" data-status={profileRecord.status}>{statusLabel[profileRecord.status]}</span></div></div>
+        <dl className="profile-details"><div><dt>Status</dt><dd>{statusDetail[profileRecord.status]}</dd></div><div><dt>Tarikh</dt><dd>{dateCaption(profileRecord.date)}</dd></div></dl>
       </section></>}
 
       {editing && <><div className="scrim visible" onClick={closeEditing} aria-hidden="true" /><section className="sheet" role="dialog" aria-modal="true" aria-labelledby="edit-title">
