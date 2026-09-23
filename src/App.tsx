@@ -3,6 +3,7 @@ import type { FormEvent } from 'react'
 import './App.css'
 
 const STATUSES = ['CUTI', 'MC', 'KURSUS', 'URUSAN_RASMI', 'KELUAR_SEMENTARA'] as const
+const WEEKDAY_LABELS = ['A', 'I', 'S', 'R', 'K', 'J', 'S']
 
 type Status = (typeof STATUSES)[number]
 type SelectedStatus = Status | ''
@@ -20,9 +21,47 @@ const statusLabel: Record<Status, string> = {
   KELUAR_SEMENTARA: 'Keluar sementara',
 }
 
+const statusDetail: Record<Status, string> = {
+  CUTI: 'Tiada di sekolah',
+  MC: 'Rehat sakit',
+  KURSUS: 'Latihan rasmi',
+  URUSAN_RASMI: 'Tugas luar',
+  KELUAR_SEMENTARA: 'Akan kembali',
+}
+
+const dailyMetrics: Status[] = ['MC', 'KURSUS', 'URUSAN_RASMI']
+
+function dateInput(value: Date) {
+  const year = value.getFullYear()
+  const month = String(value.getMonth() + 1).padStart(2, '0')
+  const day = String(value.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
+function validDate(value: string) {
+  return /^\d{4}-\d{2}-\d{2}$/.test(value) && dateInput(new Date(`${value}T12:00:00`)) === value
+}
+
 function localDate() {
-  const now = new Date()
-  return new Date(now.getTime() - now.getTimezoneOffset() * 60_000).toISOString().slice(0, 10)
+  return dateInput(new Date())
+}
+
+function weekDates(selectedDate: string) {
+  const start = validDate(selectedDate) ? new Date(`${selectedDate}T12:00:00`) : new Date()
+  start.setDate(start.getDate() - start.getDay())
+  return WEEKDAY_LABELS.map((weekday, index) => {
+    const date = new Date(start)
+    date.setDate(start.getDate() + index)
+    return { date: dateInput(date), day: weekday, number: date.getDate() }
+  })
+}
+
+function dateCaption(date: string) {
+  if (!validDate(date)) return 'Pilih tarikh'
+  const value = new Date(`${date}T12:00:00`)
+  const weekday = new Intl.DateTimeFormat('ms-MY', { weekday: 'long' }).format(value)
+  const dayMonth = new Intl.DateTimeFormat('ms-MY', { day: 'numeric', month: 'long' }).format(value)
+  return `${weekday} · ${dayMonth}`
 }
 
 function safeError(value: unknown) {
@@ -77,12 +116,12 @@ function App() {
   const [reportBusy, setReportBusy] = useState(false)
   const publicTrigger = useRef<HTMLButtonElement>(null)
   const adminTrigger = useRef<HTMLButtonElement>(null)
+  const editTrigger = useRef<HTMLElement | null>(null)
 
   const activeStaff = useMemo(() => staff.filter((item) => item.active !== false), [staff])
-  const formattedToday = useMemo(
-    () => new Intl.DateTimeFormat('ms-MY', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }).format(new Date(`${today}T00:00:00`)),
-    [today],
-  )
+  const selectedDate = admin ? dashboardDate : publicDate
+  const week = useMemo(() => weekDates(selectedDate), [selectedDate])
+  const publicReady = staffState === 'ready' && activeStaff.length > 0
 
   async function loadStaff(adminView = false) {
     setStaffState('loading')
@@ -132,10 +171,30 @@ function App() {
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
+      if (event.key === 'Tab' && (editing || publicOpen || adminOpen)) {
+        const dialog = document.querySelector<HTMLElement>('.sheet[role="dialog"]')
+        const focusable = dialog ? [...dialog.querySelectorAll<HTMLElement>('button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [href]')] : []
+        if (!focusable.length) return
+        const first = focusable[0]
+        const last = focusable.at(-1)
+        if (event.shiftKey && document.activeElement === first) {
+          event.preventDefault()
+          last?.focus()
+        } else if (!event.shiftKey && document.activeElement === last) {
+          event.preventDefault()
+          first.focus()
+        }
+        return
+      }
       if (event.key !== 'Escape') return
+      if (editing) {
+        closeEditing()
+        return
+      }
       if (publicOpen) {
         setPublicOpen(false)
         publicTrigger.current?.focus()
+        return
       }
       if (adminOpen) {
         setAdminOpen(false)
@@ -144,7 +203,7 @@ function App() {
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [adminOpen, publicOpen])
+  }, [adminOpen, editing, publicOpen])
 
   async function submitPublic(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -181,6 +240,7 @@ function App() {
     try {
       await api<{ ok: true }>('/api/admin/login', { method: 'POST', body: JSON.stringify({ pin }) }, true)
       setPin('')
+      setDashboardDate(today)
       setAdmin(true)
       setAdminOpen(false)
       setAdminTab('dashboard')
@@ -282,8 +342,8 @@ function App() {
         method: 'POST',
         body: JSON.stringify({ staffId: correctionStaffId, status: correctionStatus, date: correctionDate }),
       }, true)
-      await loadDashboard(correctionDate)
       setDashboardDate(correctionDate)
+      await loadDashboard(correctionDate)
       setCorrectionStatus('')
       setAdminNotice({ tone: 'success', text: 'Rekod pengecualian dikemas kini.' })
     } catch (error) {
@@ -314,220 +374,181 @@ function App() {
     }
   }
 
-  const closePublic = () => {
+  function chooseDate(date: string) {
+    if (!validDate(date)) return
+    if (admin) {
+      setDashboardDate(date)
+      void loadDashboard(date)
+      return
+    }
+    setPublicDate(date)
+  }
+
+  function closePublic() {
     setPublicOpen(false)
     publicTrigger.current?.focus()
   }
-  const closeAdmin = () => {
+
+  function closeAdmin() {
     setAdminOpen(false)
     adminTrigger.current?.focus()
   }
 
+  function closeEditing() {
+    editTrigger.current?.focus()
+    setEditing(null)
+  }
+
+  const notice = admin ? adminNotice : publicNotice
+
   return (
     <>
-      <main className="app-shell">
+      <main className="app">
         <header className="topbar">
           <div className="brand" aria-label="SK Darau, Keberadaan staf">
             <div className="mark" aria-hidden="true">K</div>
-            <div>
-              <strong>SK Darau</strong>
-              <span>Keberadaan staf</span>
-            </div>
+            <div><b>SK Darau</b><span>Keberadaan staf</span></div>
           </div>
           <div className="top-actions">
-            <button className="theme-button" type="button" aria-pressed={dark} onClick={() => setDark((value) => !value)}>
-              {dark ? 'Cerah' : 'Gelap'}
-            </button>
-            {admin ? (
-              <button className="admin-button" type="button" onClick={() => void logout()}>Log keluar</button>
-            ) : (
-              <button className="admin-button" ref={adminTrigger} type="button" onClick={() => setAdminOpen(true)}>Pentadbir</button>
-            )}
+            <button className="icon-btn" type="button" aria-label={dark ? 'Tukar mod cerah' : 'Tukar mod gelap'} aria-pressed={dark} onClick={() => setDark((value) => !value)}>{dark ? 'Cerah' : 'Gelap'}</button>
+            {admin ? <button className="admin-btn" type="button" onClick={() => void logout()}>Log keluar</button> : <button className="admin-btn" ref={adminTrigger} type="button" aria-expanded={adminOpen} onClick={() => setAdminOpen(true)}>Pentadbir</button>}
           </div>
         </header>
 
-        {!admin ? (
-          <>
-            <section className="hero" aria-labelledby="public-title">
-              <p className="hero-date">{formattedToday}</p>
-              <h1 id="public-title">Maklumkan pengecualian dengan ringkas.</h1>
-              <p>Hantar pengesahan untuk status yang dibenarkan sahaja.</p>
-            </section>
+        <section className="hero" aria-labelledby="page-title">
+          <p className="kicker">{dateCaption(selectedDate)}</p>
+          <h1 id="page-title">Siapa tidak berada di sekolah hari ini?</h1>
+          <p>{admin ? 'Semak, betulkan dan urus rekod melalui akses pentadbir.' : 'Makluman harian tidak dipaparkan secara awam. Tambah rekod hanya bila perlu.'}</p>
+        </section>
 
-            <section className="public-layout" aria-labelledby="form-summary">
-              <div className="panel public-card">
-                <div className="panel-heading">
-                  <div>
-                    <h2 id="form-summary">Rekod pengecualian</h2>
-                    <p>Pilih nama, status dan tarikh.</p>
-                  </div>
-                  <span className="step-label">Satu borang</span>
-                </div>
-                {publicNotice && <div className={`notice ${publicNotice.tone}`} role={publicNotice.tone === 'error' ? 'alert' : 'status'}>{publicNotice.text}</div>}
-                {staffState === 'loading' && <div className="state-message" role="status">Memuatkan senarai staf…</div>}
-                {staffState === 'error' && <div className="state-message error" role="alert">{staffError}</div>}
-                {staffState === 'ready' && activeStaff.length === 0 && (
-                  <div className="state-message">Tiada staf aktif buat masa ini. Sila hubungi pentadbir.</div>
-                )}
-                {staffState === 'ready' && activeStaff.length > 0 && (
-                  <button className="primary-button public-trigger" ref={publicTrigger} type="button" onClick={() => { setPublicNotice(null); setPublicOpen(true) }}>
-                    Buka borang pengesahan
-                  </button>
-                )}
-              </div>
-              <aside className="panel guidance-card">
-                <h2>Ringkas dan terkawal</h2>
-                <p>Tiada ruang untuk catatan kesihatan, alasan atau lampiran. Gunakan hanya jenis pengecualian yang tersedia.</p>
-                <ul className="status-key" aria-label="Status yang dibenarkan">
-                  {STATUSES.map((status) => <li key={status}>{statusLabel[status]}</li>)}
-                </ul>
-              </aside>
-            </section>
-          </>
+        {admin ? (
+          <button className="fab" type="button" onClick={() => void selectAdminTab('correction')}>Tambah atau betulkan rekod</button>
         ) : (
-          <section className="admin-workspace" aria-labelledby="admin-title">
-            <div className="workspace-heading">
-              <div>
-                <p className="eyebrow">Akses pentadbir</p>
-                <h1 id="admin-title">Urus keberadaan staf</h1>
-              </div>
-              <p>Rekod dan pembetulan memerlukan sesi pentadbir.</p>
-            </div>
+          <button className="fab" ref={publicTrigger} type="button" aria-expanded={publicOpen} disabled={!publicReady} onClick={() => { setPublicNotice(null); setPublicOpen(true) }}>
+            {staffState === 'loading' ? 'Memuatkan borang…' : publicReady ? 'Rekod pengecualian' : 'Borang belum tersedia'}
+          </button>
+        )}
 
-            <nav className="admin-tabs strip" aria-label="Navigasi pentadbir">
+        <nav className="week" aria-label="Pilih tarikh minggu ini">
+          {week.map((item) => <button className={`date ${item.date === selectedDate ? 'active' : ''}`} key={item.date} type="button" aria-pressed={item.date === selectedDate} aria-label={dateCaption(item.date)} onClick={() => chooseDate(item.date)}><span>{item.day}</span><b>{item.number}</b></button>)}
+        </nav>
+
+        {notice && <div className={`notice ${notice.tone}`} role={notice.tone === 'error' ? 'alert' : 'status'}>{notice.text}</div>}
+
+        <div className="layout">
+          <section className="panel daily-panel" aria-labelledby="daily-title">
+            <div className="panel-title">
+              <div><h2 id="daily-title">Keberadaan hari ini</h2><span>{admin ? `${records.length} rekod` : publicReady ? 'Rekod dilindungi' : staffState === 'error' ? 'Senarai staf tidak tersedia' : 'Belum sedia'}</span></div>
+              {admin && <label className="mini-field">Tarikh<input type="date" value={dashboardDate} onChange={(event) => chooseDate(event.target.value)} /></label>}
+            </div>
+            <div className={`summary ${admin ? '' : 'privacy-summary'}`}>
+              {dailyMetrics.map((status) => <div className="metric" key={status}><b>{admin ? records.filter((record) => record.status === status).length : '—'}</b><span>{statusLabel[status]}</span></div>)}
+            </div>
+            {admin ? (
+              dashboardBusy ? <div className="state-message" role="status">Memuatkan rekod…</div> : <ul className="list">{records.length === 0 ? <li className="empty-entry">Tiada rekod bagi tarikh ini.</li> : records.map((record) => <li className="entry" key={record.id}><i className="dot" data-status={record.status} aria-hidden="true" /><div><b>{record.staffName}</b><small>{statusLabel[record.status]} · {record.date}</small></div><span className="pill" data-status={record.status}>{statusLabel[record.status]}</span><button className="entry-edit" type="button" onClick={(event) => { editTrigger.current = event.currentTarget; setEditing(record) }}>Edit</button></li>)}</ul>
+            ) : (
+              <ul className="list"><li className="empty-entry">{staffState === 'loading' ? 'Memuatkan senarai staf…' : staffState === 'error' ? staffError : publicReady ? 'Borang tersedia. Makluman harian hanya boleh dilihat oleh pentadbir.' : 'Senarai staf sedang disediakan oleh pentadbir.'}</li></ul>
+            )}
+          </section>
+
+          <aside className="panel aside">
+            <h2>{admin ? 'Kawalan pentadbir' : 'Ringkas dan terkawal'}</h2>
+            <p>{admin ? 'Pilih tugas, kemudian gunakan rekod harian dan borang pembetulan yang sama.' : 'Pilih nama sendiri sahaja. Makluman ini ialah pengesahan kehormatan; tiada nota perubatan atau lampiran.'}</p>
+            {admin && <nav className="admin-tabs" aria-label="Navigasi pentadbir">
               <button className={adminTab === 'dashboard' ? 'active' : ''} type="button" onClick={() => void selectAdminTab('dashboard')}>Hari ini</button>
               <button className={adminTab === 'roster' ? 'active' : ''} type="button" onClick={() => void selectAdminTab('roster')}>Senarai staf</button>
               <button className={adminTab === 'correction' ? 'active' : ''} type="button" onClick={() => void selectAdminTab('correction')}>Pembetulan</button>
               <button className={adminTab === 'report' ? 'active' : ''} type="button" onClick={() => void selectAdminTab('report')}>Laporan</button>
-            </nav>
+            </nav>}
+            <div className="status-key" aria-label="Status yang dibenarkan">
+              {STATUSES.map((status) => <div className="key" key={status}><i className="dot" data-status={status} aria-hidden="true" />{statusLabel[status]}<em>{statusDetail[status]}</em></div>)}
+            </div>
+          </aside>
+        </div>
 
-            {adminNotice && <div className={`notice ${adminNotice.tone}`} role={adminNotice.tone === 'error' ? 'alert' : 'status'}>{adminNotice.text}</div>}
+        {admin && adminTab === 'roster' && <section className="admin-grid" aria-label="Pengurusan senarai staf">
+          <div className="panel admin-panel">
+            <div className="panel-title"><div><h2>Tambah staf</h2><span>Satu nama pada satu masa</span></div></div>
+            <form className="inline-form" onSubmit={addStaff}>
+              <label className="visually-hidden" htmlFor="new-staff">Nama staf</label>
+              <input id="new-staff" value={newStaffName} onChange={(event) => setNewStaffName(event.target.value)} placeholder="Nama penuh staf" maxLength={120} />
+              <button className="admin-action" type="submit" disabled={staffBusy === 'new'}>{staffBusy === 'new' ? 'Menyimpan…' : 'Tambah'}</button>
+            </form>
+            <form className="import-form" onSubmit={importStaff}>
+              <label htmlFor="import-staff">Import senarai</label>
+              <textarea id="import-staff" value={importNames} onChange={(event) => setImportNames(event.target.value)} placeholder="Satu nama bagi setiap baris" rows={5} />
+              <button className="text-button" type="submit" disabled={staffBusy === 'import'}>{staffBusy === 'import' ? 'Mengimport…' : 'Import nama'}</button>
+            </form>
+          </div>
+          <div className="panel admin-panel">
+            <div className="panel-title"><div><h2>Senarai staf</h2><span>Ubah nama atau status aktif</span></div></div>
+            {staffState === 'loading' && <div className="state-message" role="status">Memuatkan senarai staf…</div>}
+            {staffState === 'error' && <div className="state-message error" role="alert">{staffError}</div>}
+            {staffState === 'ready' && staff.length === 0 && <div className="state-message">Belum ada staf untuk diurus.</div>}
+            <div className="staff-list">
+              {staff.map((item) => <form className="staff-row" key={item.id} onSubmit={(event) => { event.preventDefault(); const name = String(new FormData(event.currentTarget).get('name') || '').trim(); if (name) void patchStaff(item.id, { name }) }}>
+                <input name="name" aria-label={`Nama ${item.name}`} defaultValue={item.name} maxLength={120} />
+                <span className={item.active === false ? 'active-state inactive' : 'active-state'}>{item.active === false ? 'Tidak aktif' : 'Aktif'}</span>
+                <button className="text-button" type="submit" disabled={staffBusy === item.id}>Simpan</button>
+                <button className="text-button" type="button" disabled={staffBusy === item.id} onClick={() => void patchStaff(item.id, { active: item.active === false })}>{item.active === false ? 'Aktifkan' : 'Nyahaktif'}</button>
+              </form>)}
+            </div>
+          </div>
+        </section>}
 
-            {adminTab === 'dashboard' && (
-              <section className="panel admin-panel" aria-labelledby="dashboard-title">
-                <div className="panel-heading with-control">
-                  <div>
-                    <h2 id="dashboard-title">Rekod mengikut tarikh</h2>
-                    <p>Semak rekod yang dihantar untuk tarikh dipilih.</p>
-                  </div>
-                  <label className="compact-field">Tarikh<input type="date" value={dashboardDate} onChange={(event) => { setDashboardDate(event.target.value); void loadDashboard(event.target.value) }} /></label>
-                </div>
-                {dashboardBusy ? <div className="state-message" role="status">Memuatkan rekod…</div> : records.length === 0 ? <div className="state-message">Tiada rekod untuk tarikh ini.</div> : (
-                  <ul className="record-list">
-                    {records.map((record) => (
-                      <li key={record.id}>
-                        <div><strong>{record.staffName}</strong><span>{record.date}</span></div>
-                        <span className="pill" data-status={record.status}>{statusLabel[record.status]}</span>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </section>
-            )}
-
-            {adminTab === 'roster' && (
-              <section className="roster-grid" aria-label="Pengurusan senarai staf">
-                <div className="panel admin-panel">
-                  <div className="panel-heading"><div><h2>Tambah staf</h2><p>Satu nama pada satu masa.</p></div></div>
-                  <form className="inline-form" onSubmit={addStaff}>
-                    <label className="visually-hidden" htmlFor="new-staff">Nama staf</label>
-                    <input id="new-staff" value={newStaffName} onChange={(event) => setNewStaffName(event.target.value)} placeholder="Nama penuh staf" maxLength={120} />
-                    <button className="secondary-button" type="submit" disabled={staffBusy === 'new'}>{staffBusy === 'new' ? 'Menyimpan…' : 'Tambah'}</button>
-                  </form>
-                  <form className="import-form" onSubmit={importStaff}>
-                    <label htmlFor="import-staff">Import senarai</label>
-                    <textarea id="import-staff" value={importNames} onChange={(event) => setImportNames(event.target.value)} placeholder={'Satu nama bagi setiap baris'} rows={5} />
-                    <button className="text-button" type="submit" disabled={staffBusy === 'import'}>{staffBusy === 'import' ? 'Mengimport…' : 'Import nama'}</button>
-                  </form>
-                </div>
-                <div className="panel admin-panel">
-                  <div className="panel-heading"><div><h2>Senarai staf</h2><p>Ubah nama atau status aktif.</p></div></div>
-                  {staffState === 'loading' && <div className="state-message" role="status">Memuatkan senarai staf…</div>}
-                  {staffState === 'error' && <div className="state-message error" role="alert">{staffError}</div>}
-                  {staffState === 'ready' && staff.length === 0 && <div className="state-message">Belum ada staf untuk diurus.</div>}
-                  <div className="staff-list">
-                    {staff.map((item) => (
-                      <form className="staff-row" key={item.id} onSubmit={(event) => { event.preventDefault(); const name = String(new FormData(event.currentTarget).get('name') || '').trim(); if (name) void patchStaff(item.id, { name }) }}>
-                        <input name="name" aria-label={`Nama ${item.name}`} defaultValue={item.name} maxLength={120} />
-                        <span className={item.active === false ? 'active-state inactive' : 'active-state'}>{item.active === false ? 'Tidak aktif' : 'Aktif'}</span>
-                        <button className="text-button" type="submit" disabled={staffBusy === item.id}>Simpan</button>
-                        <button className="icon-action" type="button" disabled={staffBusy === item.id} onClick={() => void patchStaff(item.id, { active: item.active === false })}>
-                          {item.active === false ? 'Aktifkan' : 'Nyahaktif'}
-                        </button>
-                      </form>
-                    ))}
-                  </div>
-                </div>
-              </section>
-            )}
-
-            {adminTab === 'correction' && (
-              <section className="correction-grid" aria-label="Pembetulan rekod">
-                <form className="panel admin-panel correction-form" onSubmit={saveCorrection}>
-                  <div className="panel-heading"><div><h2>Tambah atau betulkan</h2><p>Simpan akan menggantikan rekod staf bagi tarikh sama.</p></div></div>
-                  <label>Nama staf<select value={correctionStaffId} onChange={(event) => setCorrectionStaffId(event.target.value)} required><option value="">Pilih staf</option>{activeStaff.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
-                  <label>Status<select value={correctionStatus} onChange={(event) => setCorrectionStatus(event.target.value as SelectedStatus)} required><option value="">Pilih status</option>{STATUSES.map((status) => <option key={status} value={status}>{statusLabel[status]}</option>)}</select></label>
-                  <label>Tarikh<input type="date" value={correctionDate} onChange={(event) => setCorrectionDate(event.target.value)} required /></label>
-                  <button className="primary-button" type="submit" disabled={correctionBusy || activeStaff.length === 0}>{correctionBusy ? 'Menyimpan…' : 'Simpan pembetulan'}</button>
-                </form>
-                <div className="panel admin-panel">
-                  <div className="panel-heading with-control"><div><h2>Rekod untuk semakan</h2><p>Pilih rekod untuk ubah status atau tarikh.</p></div><label className="compact-field">Tarikh<input type="date" value={dashboardDate} onChange={(event) => { setDashboardDate(event.target.value); void loadDashboard(event.target.value) }} /></label></div>
-                  {dashboardBusy ? <div className="state-message" role="status">Memuatkan rekod…</div> : records.length === 0 ? <div className="state-message">Tiada rekod untuk dibetulkan.</div> : <ul className="record-list edit-list">{records.map((record) => <li key={record.id}><div><strong>{record.staffName}</strong><span>{record.date}</span></div><span className="pill" data-status={record.status}>{statusLabel[record.status]}</span><button className="text-button" type="button" onClick={() => setEditing(record)}>Edit</button></li>)}</ul>}
-                </div>
-              </section>
-            )}
-
-            {adminTab === 'report' && (
-              <section className="panel admin-panel" aria-labelledby="report-title">
-                <div className="panel-heading with-control"><div><h2 id="report-title">Laporan bulanan</h2><p>Jumlah rekod mengikut staf dan status.</p></div><label className="compact-field">Bulan<input type="month" value={reportMonth} onChange={(event) => { setReportMonth(event.target.value); void loadReport(event.target.value) }} /></label></div>
-                {reportBusy ? <div className="state-message" role="status">Memuatkan laporan…</div> : reportRows.length === 0 ? <div className="state-message">Tiada data laporan untuk bulan ini.</div> : <div className="report-table-wrap"><table><thead><tr><th scope="col">Staf</th><th scope="col">Status</th><th scope="col">Jumlah</th></tr></thead><tbody>{reportRows.map((row) => <tr key={`${row.staffName}-${row.status}`}><td>{row.staffName}</td><td><span className="pill" data-status={row.status}>{statusLabel[row.status]}</span></td><td>{row.total}</td></tr>)}</tbody></table></div>}
-              </section>
-            )}
+        {admin && adminTab === 'correction' && <section className="admin-grid correction-grid" aria-label="Tambah atau pembetulan rekod">
+          <form className="panel admin-panel correction-form" onSubmit={saveCorrection}>
+            <div className="panel-title"><div><h2>Tambah atau betulkan</h2><span>Satu rekod staf bagi satu tarikh</span></div></div>
+            <label className="field">Nama staf<select value={correctionStaffId} onChange={(event) => setCorrectionStaffId(event.target.value)} required><option value="">Pilih staf</option>{activeStaff.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
+            <label className="field">Status<select value={correctionStatus} onChange={(event) => setCorrectionStatus(event.target.value as SelectedStatus)} required><option value="">Pilih status</option>{STATUSES.map((status) => <option key={status} value={status}>{statusLabel[status]}</option>)}</select></label>
+            <label className="field">Tarikh<input type="date" value={correctionDate} onChange={(event) => setCorrectionDate(event.target.value)} required /></label>
+            <button className="save" type="submit" disabled={correctionBusy || activeStaff.length === 0}>{correctionBusy ? 'Menyimpan…' : 'Simpan pembetulan'}</button>
+          </form>
+          <section className="panel admin-panel correction-guide">
+            <div className="panel-title"><div><h2>Semakan rekod</h2><span>Pilih Edit pada rekod harian</span></div></div>
+            <p>Gunakan jalur tarikh di atas untuk memuatkan rekod lain, kemudian pilih Edit untuk menukar status atau tarikh.</p>
+            <button className="admin-action" type="button" onClick={() => void selectAdminTab('dashboard')}>Kembali ke rekod harian</button>
           </section>
-        )}
+        </section>}
+
+        {admin && adminTab === 'report' && <section className="panel admin-panel report-panel" aria-labelledby="report-title">
+          <div className="panel-title"><div><h2 id="report-title">Laporan bulanan</h2><span>Jumlah rekod mengikut staf dan status</span></div><label className="mini-field">Bulan<input type="month" value={reportMonth} onChange={(event) => { if (!event.target.value) return; setReportMonth(event.target.value); void loadReport(event.target.value) }} /></label></div>
+          {reportBusy ? <div className="state-message" role="status">Memuatkan laporan…</div> : reportRows.length === 0 ? <div className="state-message">Tiada data laporan untuk bulan ini.</div> : <div className="report-table-wrap"><table><thead><tr><th scope="col">Staf</th><th scope="col">Status</th><th scope="col">Jumlah</th></tr></thead><tbody>{reportRows.map((row) => <tr key={`${row.staffName}-${row.status}`}><td>{row.staffName}</td><td><span className="pill" data-status={row.status}>{statusLabel[row.status]}</span></td><td>{row.total}</td></tr>)}</tbody></table></div>}
+        </section>}
       </main>
 
-      {!admin && <>
-        <div className={`scrim ${publicOpen ? 'visible' : ''}`} onClick={closePublic} aria-hidden="true" />
-        <section className={`sheet ${publicOpen ? 'open' : ''}`} role="dialog" aria-modal="true" aria-labelledby="public-form-title" aria-hidden={!publicOpen}>
-          <div className="handle" />
-          <div className="sheet-heading"><div><p className="eyebrow">Pengesahan staf</p><h2 id="public-form-title">Rekod pengecualian</h2></div><button className="close-button" type="button" aria-label="Tutup borang" onClick={closePublic}>×</button></div>
-          <form className="public-form" onSubmit={submitPublic}>
-            {publicNotice?.tone === 'error' && <div className="notice error" role="alert">{publicNotice.text}</div>}
-            <label>Nama staf<select value={publicStaffId} onChange={(event) => setPublicStaffId(event.target.value)} required><option value="">Pilih nama</option>{activeStaff.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
-            <fieldset><legend>Jenis pengecualian</legend><div className="status-options">{STATUSES.map((status) => <button className={publicStatus === status ? 'selected' : ''} key={status} type="button" aria-pressed={publicStatus === status} onClick={() => setPublicStatus(status)}>{statusLabel[status]}</button>)}</div></fieldset>
-            <label>Tarikh<input type="date" value={publicDate} onChange={(event) => setPublicDate(event.target.value)} required /></label>
-            <p className="declaration">Saya mengesahkan makluman ini adalah tepat.</p>
-            <button className="primary-button" type="submit" disabled={publicBusy || activeStaff.length === 0}>{publicBusy ? 'Menyimpan…' : 'Simpan makluman'}</button>
-          </form>
-        </section>
-      </>}
+      {!admin && publicOpen && <><div className="scrim visible" onClick={closePublic} aria-hidden="true" /><section className="sheet" role="dialog" aria-modal="true" aria-labelledby="public-form-title">
+        <div className="handle" />
+        <div className="sheet-top"><h2 id="public-form-title">Rekod pengecualian</h2><button className="close" type="button" aria-label="Tutup borang" onClick={closePublic}>×</button></div>
+        <div className="progress" aria-label="Borang satu langkah"><i className="active" /><i className="active" /><i className="active" /></div>
+        <form className="sheet-form" onSubmit={submitPublic}>
+          {publicNotice?.tone === 'error' && <div className="notice error" role="alert">{publicNotice.text}</div>}
+          <label className="field" htmlFor="public-staff">Nama staf<select id="public-staff" autoFocus value={publicStaffId} onChange={(event) => setPublicStaffId(event.target.value)} required><option value="">Pilih nama</option>{activeStaff.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
+          <fieldset className="field"><legend>Pengecualian hari ini</legend><div className="states" role="group" aria-label="Pilih status">{STATUSES.map((status) => <button className="state" key={status} type="button" aria-pressed={publicStatus === status} onClick={() => setPublicStatus(status)}>{statusLabel[status]}<small>{statusDetail[status]}</small></button>)}</div></fieldset>
+          <label className="field" htmlFor="public-date">Tarikh<input id="public-date" type="date" value={publicDate} onChange={(event) => chooseDate(event.target.value)} required /></label>
+          <button className="save" type="submit" disabled={publicBusy || !publicReady}>{publicBusy ? 'Menyimpan…' : 'Simpan makluman'}</button>
+        </form>
+      </section></>}
 
-      {!admin && <>
-        <div className={`scrim ${adminOpen ? 'visible' : ''}`} onClick={closeAdmin} aria-hidden="true" />
-        <section className={`sheet admin-sheet ${adminOpen ? 'open' : ''}`} role="dialog" aria-modal="true" aria-labelledby="login-title" aria-hidden={!adminOpen}>
-          <div className="handle" />
-          <div className="sheet-heading"><div><p className="eyebrow">Pentadbir SK Darau</p><h2 id="login-title">Masukkan PIN</h2></div><button className="close-button" type="button" aria-label="Tutup panel pentadbir" onClick={closeAdmin}>×</button></div>
-          <form className="public-form" onSubmit={submitLogin}>
-            <label htmlFor="admin-pin">PIN pentadbir<input id="admin-pin" type="password" inputMode="numeric" autoComplete="current-password" value={pin} onChange={(event) => setPin(event.target.value)} required /></label>
-            {adminNotice?.tone === 'error' && <div className="notice error" role="alert">{adminNotice.text}</div>}
-            <button className="primary-button" type="submit" disabled={loginBusy}>{loginBusy ? 'Menyemak…' : 'Masuk ke pentadbir'}</button>
-          </form>
-        </section>
-      </>}
+      {!admin && adminOpen && <><div className="scrim visible" onClick={closeAdmin} aria-hidden="true" /><section className="sheet" role="dialog" aria-modal="true" aria-labelledby="login-title">
+        <div className="handle" />
+        <div className="sheet-top"><h2 id="login-title">Masukkan PIN</h2><button className="close" type="button" aria-label="Tutup panel pentadbir" onClick={closeAdmin}>×</button></div>
+        <form className="sheet-form" onSubmit={submitLogin}>
+          <label className="field" htmlFor="admin-pin">PIN pentadbir<input id="admin-pin" autoFocus type="password" inputMode="numeric" autoComplete="current-password" value={pin} onChange={(event) => setPin(event.target.value)} required /></label>
+          {adminNotice?.tone === 'error' && <div className="notice error" role="alert">{adminNotice.text}</div>}
+          <button className="save" type="submit" disabled={loginBusy}>{loginBusy ? 'Menyemak…' : 'Masuk ke pentadbir'}</button>
+        </form>
+      </section></>}
 
-      {editing && <>
-        <div className="scrim visible" onClick={() => setEditing(null)} aria-hidden="true" />
-        <section className="sheet open edit-sheet" role="dialog" aria-modal="true" aria-labelledby="edit-title">
-          <div className="handle" />
-          <div className="sheet-heading"><div><p className="eyebrow">Pembetulan rekod</p><h2 id="edit-title">{editing.staffName}</h2></div><button className="close-button" type="button" aria-label="Tutup pembetulan" onClick={() => setEditing(null)}>×</button></div>
-          <form className="public-form" onSubmit={updateException}>
-            <label>Status<select name="status" defaultValue={editing.status}>{STATUSES.map((status) => <option key={status} value={status}>{statusLabel[status]}</option>)}</select></label>
-            <label>Tarikh<input name="date" type="date" defaultValue={editing.date} required /></label>
-            <button className="primary-button" type="submit" disabled={correctionBusy}>{correctionBusy ? 'Menyimpan…' : 'Simpan rekod'}</button>
-          </form>
-        </section>
-      </>}
+      {editing && <><div className="scrim visible" onClick={closeEditing} aria-hidden="true" /><section className="sheet" role="dialog" aria-modal="true" aria-labelledby="edit-title">
+        <div className="handle" />
+        <div className="sheet-top"><h2 id="edit-title">{editing.staffName}</h2><button className="close" type="button" aria-label="Tutup pembetulan" onClick={closeEditing}>×</button></div>
+        <form className="sheet-form" onSubmit={updateException}>
+          <label className="field" htmlFor="edit-status">Status<select id="edit-status" name="status" autoFocus defaultValue={editing.status}>{STATUSES.map((status) => <option key={status} value={status}>{statusLabel[status]}</option>)}</select></label>
+          <label className="field" htmlFor="edit-date">Tarikh<input id="edit-date" name="date" type="date" defaultValue={editing.date} required /></label>
+          <button className="save" type="submit" disabled={correctionBusy}>{correctionBusy ? 'Menyimpan…' : 'Simpan rekod'}</button>
+        </form>
+      </section></>}
     </>
   )
 }
