@@ -11,6 +11,7 @@
 2. Submit one attendance record using `POST /api/exceptions`: staff ID, allowed status, ISO date.
 3. Server validates data, applies a small D1 per-IP rate limit and creates one record per staff/date; duplicate public submit returns `409` without overwrite.
 4. D1 trigger writes the immutable exception audit row in the same transaction.
+5. `GET /api/dashboard?date=YYYY-MM-DD` displays daily staff name, status and date to all staff; it has no edit or deletion operation.
 
 ## Admin flow
 - `POST /api/admin/login` compares the shared PIN with Cloudflare secret `ADMIN_PIN` and issues a six-hour signed cookie using `SESSION_SECRET`.

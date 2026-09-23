@@ -236,6 +236,19 @@ test('public roster and exception endpoints only expose valid active-staff decla
   assert.match((await invalid.json()).error, /Maklumat pengecualian tidak sah/)
 })
 
+test('public attendance dashboard displays staff submissions but keeps admin mutations protected', async () => {
+  const DB = new FakeD1()
+  const created = await call(DB, 'exceptions', { method: 'POST', data: { staffId: 'staff-1', status: 'CUTI', date: '2026-09-23' } })
+  const record = (await created.json()).record
+  const dashboard = await call(DB, 'dashboard?date=2026-09-23')
+
+  assert.equal(dashboard.status, 200)
+  assert.deepEqual((await dashboard.json()).records.map(({ staffName, status, date }) => ({ staffName, status, date })), [{ staffName: 'Cikgu Hana', status: 'CUTI', date: '2026-09-23' }])
+  assert.equal((await call(DB, 'admin/dashboard?date=2026-09-23')).status, 401)
+  assert.equal((await call(DB, `admin/exceptions/${record.id}`, { method: 'PATCH', data: { status: 'MC', date: '2026-09-23' } })).status, 401)
+  assert.equal((await call(DB, `admin/exceptions/${record.id}`, { method: 'DELETE' })).status, 401)
+})
+
 test('public exception submissions create once, cannot overwrite, and keep an eight-per-minute limit', async () => {
   const DB = new FakeD1()
   assert.equal((await call(DB, 'exceptions', { method: 'POST', data: { staffId: 'staff-1', status: 'CUTI', date: '2026-09-22' } })).status, 201)

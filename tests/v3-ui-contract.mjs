@@ -10,10 +10,13 @@ const [app, css] = await Promise.all([
 for (const control of ['fab', 'week', 'date', 'summary', 'metric', 'list', 'entry', 'aside', 'sheet', 'states', 'state']) {
   assert.match(`${app}\n${css}`, new RegExp(`\\.${control}|className=["\\"][^"\\"]*${control}`), `missing Proof V3 ${control} control`)
 }
-for (const endpoint of ['/api/staff', '/api/exceptions', '/api/admin/login', '/api/admin/logout', '/api/admin/dashboard?', '/api/admin/staff', '/api/admin/import', '/api/admin/report?', '/api/admin/exceptions']) {
+for (const endpoint of ['/api/staff', '/api/dashboard?', '/api/exceptions', '/api/admin/login', '/api/admin/logout', '/api/admin/dashboard?', '/api/admin/staff', '/api/admin/import', '/api/admin/report?', '/api/admin/exceptions']) {
   assert.ok(app.includes(endpoint), `missing ${endpoint}`)
 }
 assert.match(app, /Rekod Kehadiran/)
+assert.match(app, /Rekod hari ini dipaparkan kepada semua staf/)
+assert.doesNotMatch(app, /hanya boleh dilihat oleh pentadbir/)
+assert.match(app, /admin && <div className="entry-actions"/)
 assert.match(app, /method: 'DELETE'/)
 assert.match(app, /auto-refresh 15 saat/)
 assert.match(app, /entry-delete/)

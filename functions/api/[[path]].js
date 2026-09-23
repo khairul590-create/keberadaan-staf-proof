@@ -236,6 +236,11 @@ async function deleteException(request, env, id) {
   return json({ ok: true })
 }
 
+async function readDashboard(db, date) {
+  const { results } = await db.prepare('SELECT e.id, e.date, e.status, e.updated_at AS updatedAt, s.id AS staffId, s.name AS staffName FROM exceptions e JOIN staff s ON s.id = e.staff_id WHERE e.date = ? ORDER BY s.name').bind(date).all()
+  return { date, records: results }
+}
+
 export async function onRequest(context) {
   const { request, env } = context
   if (!env.DB) return fail('Pangkalan data D1 belum diikat pada Pages.', 503)
@@ -260,12 +265,16 @@ export async function onRequest(context) {
   const staffMatch = path.match(/^admin\/staff\/([\w-]+)$/)
   if (staffMatch && method === 'PATCH') return updateStaff(request, env, staffMatch[1])
 
+  if (path === 'dashboard' && method === 'GET') {
+    const date = url.searchParams.get('date') || new Date().toISOString().slice(0, 10)
+    if (!isValidDate(date)) return fail('Tarikh tidak sah.')
+    return json(await readDashboard(env.DB, date))
+  }
   if (path === 'admin/dashboard' && method === 'GET') {
     const denied = await requireAdmin(request, env); if (denied) return denied
     const date = url.searchParams.get('date') || new Date().toISOString().slice(0, 10)
     if (!isValidDate(date)) return fail('Tarikh tidak sah.')
-    const { results } = await env.DB.prepare('SELECT e.id, e.date, e.status, e.updated_at AS updatedAt, s.id AS staffId, s.name AS staffName FROM exceptions e JOIN staff s ON s.id = e.staff_id WHERE e.date = ? ORDER BY s.name').bind(date).all()
-    return json({ date, records: results })
+    return json(await readDashboard(env.DB, date))
   }
   if (path === 'admin/report' && method === 'GET') {
     const denied = await requireAdmin(request, env); if (denied) return denied

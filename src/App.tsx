@@ -29,8 +29,6 @@ const statusDetail: Record<Status, string> = {
   KELUAR_SEMENTARA: 'Akan kembali',
 }
 
-const dailyMetrics: Status[] = ['MC', 'KURSUS', 'URUSAN_RASMI']
-
 function dateInput(value: Date) {
   const year = value.getFullYear()
   const month = String(value.getMonth() + 1).padStart(2, '0')
@@ -122,13 +120,11 @@ function App() {
   const selectedDate = admin ? dashboardDate : publicDate
   const week = useMemo(() => weekDates(selectedDate), [selectedDate])
   const publicReady = staffState === 'ready' && activeStaff.length > 0
-  const metricItems = admin
-    ? [
-        { label: 'Jumlah rekod', total: records.length },
-        { label: 'Tidak hadir', total: records.filter((record) => record.status !== 'KELUAR_SEMENTARA').length },
-        { label: 'Keluar sementara', total: records.filter((record) => record.status === 'KELUAR_SEMENTARA').length },
-      ]
-    : dailyMetrics.map((status) => ({ label: statusLabel[status], total: '—' }))
+  const metricItems = [
+    { label: 'Jumlah rekod', total: records.length },
+    { label: 'Tidak hadir', total: records.filter((record) => record.status !== 'KELUAR_SEMENTARA').length },
+    { label: 'Keluar sementara', total: records.filter((record) => record.status === 'KELUAR_SEMENTARA').length },
+  ]
 
   async function loadStaff(adminView = false) {
     setStaffState('loading')
@@ -155,6 +151,18 @@ function App() {
     }
   }
 
+  async function loadPublicDashboard(date = publicDate, quiet = false) {
+    if (!quiet) setDashboardBusy(true)
+    try {
+      const data = await api<{ date: string; records: ExceptionRecord[] }>(`/api/dashboard?date=${encodeURIComponent(date)}`)
+      setRecords(data.records)
+    } catch (error) {
+      setPublicNotice({ tone: 'error', text: safeError(error) })
+    } finally {
+      if (!quiet) setDashboardBusy(false)
+    }
+  }
+
   async function loadReport(month = reportMonth) {
     setReportBusy(true)
     try {
@@ -168,7 +176,7 @@ function App() {
   }
 
   useEffect(() => {
-    void loadStaff()
+    void Promise.all([loadStaff(), loadPublicDashboard()])
   }, [])
 
   useEffect(() => {
@@ -177,10 +185,13 @@ function App() {
   }, [dark])
 
   useEffect(() => {
-    if (!admin || adminTab !== 'dashboard') return
-    const timer = window.setInterval(() => void loadDashboard(dashboardDate, true), 15_000)
+    if (admin && adminTab !== 'dashboard') return
+    const refresh = admin
+      ? () => void loadDashboard(dashboardDate, true)
+      : () => void loadPublicDashboard(publicDate, true)
+    const timer = window.setInterval(refresh, 15_000)
     return () => window.clearInterval(timer)
-  }, [admin, adminTab, dashboardDate])
+  }, [admin, adminTab, dashboardDate, publicDate])
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
@@ -231,6 +242,7 @@ function App() {
         method: 'POST',
         body: JSON.stringify({ staffId: publicStaffId, status: publicStatus, date: publicDate }),
       })
+      await loadPublicDashboard(publicDate)
       setPublicNotice({ tone: 'success', text: `Rekod kehadiran ${data.record.staffName} telah diterima.` })
       setPublicOpen(false)
       setPublicStatus('')
@@ -271,9 +283,8 @@ function App() {
       await api<{ ok: true }>('/api/admin/logout', { method: 'POST' }, true)
       setAdmin(false)
       setAdminTab('dashboard')
-      setRecords([])
       setReportRows([])
-      await loadStaff()
+      await Promise.all([loadStaff(), loadPublicDashboard(publicDate)])
     } catch (error) {
       setAdminNotice({ tone: 'error', text: safeError(error) })
     }
@@ -411,6 +422,7 @@ function App() {
       return
     }
     setPublicDate(date)
+    void loadPublicDashboard(date)
   }
 
   function closePublic() {
@@ -447,7 +459,7 @@ function App() {
         <section className="hero" aria-labelledby="page-title">
           <p className="kicker">{dateCaption(selectedDate)}</p>
           <h1 id="page-title">Siapa tidak berada di sekolah hari ini?</h1>
-          <p>{admin ? 'Semak, betulkan dan urus rekod melalui akses pentadbir.' : 'Makluman harian tidak dipaparkan secara awam. Tambah rekod hanya bila perlu.'}</p>
+          <p>{admin ? 'Semak, betulkan dan urus rekod melalui akses pentadbir.' : 'Rekod hari ini dipaparkan kepada semua staf. Tambah rekod hanya bila perlu.'}</p>
         </section>
 
         {admin ? (
@@ -467,17 +479,13 @@ function App() {
         <div className="layout">
           <section className="panel daily-panel" aria-labelledby="daily-title">
             <div className="panel-title">
-              <div><h2 id="daily-title">Keberadaan hari ini</h2><span>{admin ? `${records.length} rekod · auto-refresh 15 saat` : publicReady ? 'Rekod dilindungi' : staffState === 'error' ? 'Senarai staf tidak tersedia' : 'Belum sedia'}</span></div>
+              <div><h2 id="daily-title">Keberadaan hari ini</h2><span>{`${records.length} rekod · auto-refresh 15 saat`}</span></div>
               {admin && <label className="mini-field">Tarikh<input type="date" value={dashboardDate} onChange={(event) => chooseDate(event.target.value)} /></label>}
             </div>
-            <div className={`summary ${admin ? '' : 'privacy-summary'}`}>
+            <div className="summary">
               {metricItems.map((item) => <div className="metric" key={item.label}><b>{item.total}</b><span>{item.label}</span></div>)}
             </div>
-            {admin ? (
-              dashboardBusy ? <div className="state-message" role="status">Memuatkan rekod…</div> : <ul className="list">{records.length === 0 ? <li className="empty-entry">Tiada rekod bagi tarikh ini.</li> : records.map((record) => <li className="entry" key={record.id}><i className="dot" data-status={record.status} aria-hidden="true" /><div><b>{record.staffName}</b><small>{statusLabel[record.status]} · {record.date}</small></div><span className="pill" data-status={record.status}>{statusLabel[record.status]}</span><div className="entry-actions"><button className="entry-edit" type="button" onClick={(event) => { editTrigger.current = event.currentTarget; setEditing(record) }}>Edit</button><button className="entry-delete" type="button" disabled={correctionBusy} onClick={() => void removeException(record)}>Padam</button></div></li>)}</ul>
-            ) : (
-              <ul className="list"><li className="empty-entry">{staffState === 'loading' ? 'Memuatkan senarai staf…' : staffState === 'error' ? staffError : publicReady ? 'Borang tersedia. Makluman harian hanya boleh dilihat oleh pentadbir.' : 'Senarai staf sedang disediakan oleh pentadbir.'}</li></ul>
-            )}
+            {dashboardBusy ? <div className="state-message" role="status">Memuatkan rekod…</div> : <ul className="list">{records.length === 0 ? <li className="empty-entry">Tiada rekod bagi tarikh ini.</li> : records.map((record) => <li className="entry" key={record.id}><i className="dot" data-status={record.status} aria-hidden="true" /><div><b>{record.staffName}</b><small>{statusLabel[record.status]} · {record.date}</small></div><span className="pill" data-status={record.status}>{statusLabel[record.status]}</span>{admin && <div className="entry-actions"><button className="entry-edit" type="button" onClick={(event) => { editTrigger.current = event.currentTarget; setEditing(record) }}>Edit</button><button className="entry-delete" type="button" disabled={correctionBusy} onClick={() => void removeException(record)}>Padam</button></div>}</li>)}</ul>}
           </section>
 
           <aside className="panel aside">

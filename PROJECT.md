@@ -1,28 +1,28 @@
 # Sistem Keberadaan Staf SK Darau — Project Brief
 
 ## Problem and V1 outcome
-Pentadbir perlu melihat segera staf yang mempunyai pengecualian keberadaan pada sesuatu tarikh: Cuti, MC, Kursus, Urusan Rasmi atau Keluar Sementara. Staf mengisytiharkan status sendiri melalui borang ringkas tanpa login; pentadbir membetulkan rekod melalui dashboard dilindungi PIN.
+Pentadbir perlu melihat segera staf yang mempunyai rekod keberadaan pada sesuatu tarikh: Cuti, MC, Kursus, Urusan Rasmi atau Keluar Sementara. Staf mengisytiharkan status sendiri melalui borang ringkas tanpa login; semua staf melihat papan harian yang sama, manakala pentadbir membetulkan atau memadam rekod melalui dashboard dilindungi PIN.
 
-V1 berjaya apabila seorang staf boleh memilih namanya, memasukkan status dan tarikh dari telefon, kemudian pentadbir melihat rekod itu pada papan hari yang sama dan boleh membetulkannya.
+V1 berjaya apabila seorang staf boleh memilih namanya, memasukkan status dan tarikh dari telefon, lalu rekod itu muncul pada papan hari yang sama untuk semua staf; hanya pentadbir boleh membetulkan atau memadamkannya.
 
 ## Users and permissions
 
 | User | Read | Create | Update | Delete |
 |---|---|---|---|---|
-| Staf (tanpa login) | Borang sendiri sahaja | Satu rekod pengecualian bagi nama/tarikh yang dipilih | Tiada | Tiada |
-| Pentadbir (satu PIN bersama) | Semua rekod, ringkasan harian, laporan bulanan | Rekod bagi pihak staf; staf baharu | Betulkan rekod dan roster | Tiada dalam V1 |
+| Staf (tanpa login) | Papan harian: nama, status, tarikh | Satu rekod keberadaan bagi nama/tarikh yang dipilih | Tiada | Tiada |
+| Pentadbir (satu PIN bersama) | Semua rekod, ringkasan harian, laporan bulanan | Rekod bagi pihak staf; staf baharu | Betulkan rekod dan roster | Padam rekod dengan audit |
 
 ## Core journeys
-1. Staf buka URL → cari nama → pilih status + tarikh → hantar.
-2. Pentadbir masukkan PIN → lihat papan hari ini yang mengutamakan MC dan Cuti → buka rekod → betulkan status/tarikh.
+1. Staf buka URL → lihat papan hari ini → cari nama → pilih status + tarikh → hantar → lihat rekod yang sama pada papan.
+2. Pentadbir masukkan PIN → lihat papan hari ini → buka rekod → betulkan status/tarikh atau padam dengan confirmation.
 3. Pentadbir import CSV roster → semak staf aktif → lihat laporan bulanan mengikut staf dan status.
 
 ## V1 modules
-- Borang staf tanpa login.
-- Dashboard pentadbir: ringkasan hari ini, senarai pengecualian, pembetulan rekod.
+- Borang staf tanpa login dan papan harian bersama untuk semua staf.
+- Dashboard pentadbir: ringkasan hari ini, pembetulan dan pemadaman rekod diaudit.
 - Roster staf: import CSV dan tambah/edit staf.
 - Laporan bulanan ringkas.
-- Audit rekod: masa cipta dan kemas kini, sumber staf atau pentadbir.
+- Audit rekod: masa cipta, kemas kini dan pemadaman; sumber staf atau pentadbir.
 
 ## Explicit V1 boundary
 - Status hanya: `CUTI`, `MC`, `KURSUS`, `URUSAN_RASMI`, `KELUAR_SEMENTARA`.
@@ -32,14 +32,14 @@ V1 berjaya apabila seorang staf boleh memilih namanya, memasukkan status dan tar
 ## Out of scope
 - Akaun staf/DELIMa login.
 - Pengesahan rasmi identiti staf.
-- Dokumen MC, fail/R2, notifikasi, HRMIS/Calendar, multi-sekolah, pemadaman rekod.
+- Dokumen MC, fail/R2, notifikasi, HRMIS/Calendar, multi-sekolah.
 
 ## Data, ownership and security boundary
 - Satu sekolah sahaja: SK Darau.
-- Data: nama staf, jawatan/unit, status pengecualian dan tarikh; tiada IC, telefon atau rekod perubatan.
+- Data: nama staf, status keberadaan dan tarikh; tiada IC, telefon atau rekod perubatan.
 - Borang terbuka ialah pengisytiharan kehormatan; ia tidak membuktikan orang sebenar yang memilih nama.
-- PIN pentadbir dan rahsia sesi disimpan sebagai Cloudflare Pages Secrets (`ADMIN_PIN`, `SESSION_SECRET`), bukan dalam D1 atau source. Sesi admin bertanda tangan, HTTP-only dan tamat tempoh. Percubaan PIN dilimitkan. Semua input disahkan server-side.
-- Rekod tidak dipadam dalam V1. Pembetulan mengemas kini rekod dan audit menyimpan masa/sumber, tetapi PIN bersama tidak boleh mengenal pasti pentadbir individu.
+- Semua staf boleh melihat nama, status dan tarikh pada papan hari semasa. PIN pentadbir dan rahsia sesi disimpan sebagai Cloudflare Pages Secrets (`ADMIN_PIN`, `SESSION_SECRET`), bukan dalam D1 atau source. Sesi admin bertanda tangan, HTTP-only dan tamat tempoh. Percubaan PIN dilimitkan. Semua input disahkan server-side.
+- Hanya pentadbir boleh memadam rekod. Pemadaman memerlukan confirmation UI, berlaku atomik bersama satu audit `EXCEPTION_DELETED`; PIN bersama tidak boleh mengenal pasti pentadbir individu.
 
 ## Chosen stack and deployment
 - Frontend: React + TypeScript + Vite.
