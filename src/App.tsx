@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import './App.css'
+import schoolCrest from './assets/sk-darau-crest.jpg'
 
 const STATUSES = ['CUTI', 'MC', 'KURSUS', 'URUSAN_RASMI', 'KELUAR_SEMENTARA'] as const
 const WEEKDAY_LABELS = ['A', 'I', 'S', 'R', 'K', 'J', 'S']
@@ -524,7 +525,7 @@ function App() {
       <main className="app">
         <header className="topbar">
           <div className="brand" aria-label="SK Darau, Keberadaan staf">
-            <div className="mark" aria-hidden="true">K</div>
+            <div className="mark school-mark"><img src={schoolCrest} alt="" /></div>
             <div><b>SK Darau</b><span>Keberadaan staf</span></div>
           </div>
           <div className="top-actions">

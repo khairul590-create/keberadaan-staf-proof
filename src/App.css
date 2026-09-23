@@ -11,6 +11,7 @@
   --nav: #101829;
   --nav-ink: #eef5ff;
   --accent: #d28a2c;
+  --accent-ink: #8a5a0c;
   --green: #167a55;
   --red: #c53b45;
   --violet: #6b55c6;
@@ -30,6 +31,7 @@
   --nav: #eaf2ff;
   --nav-ink: #0b1120;
   --accent: #ffc866;
+  --accent-ink: #ffc866;
   --green: #7ddfba;
   --red: #ff9aa4;
   --violet: #b8a8ff;
@@ -99,6 +101,23 @@ textarea:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; 
   font-size: 21px;
   font-weight: 900;
   letter-spacing: -.07em;
+}
+
+.mark.school-mark {
+  overflow: hidden;
+  padding: 3px;
+  border: 1px solid #d8ae56;
+  border-radius: 12px;
+  background: #fff8e8;
+  box-shadow: 0 3px 0 #8b641f;
+}
+
+.school-mark img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: 7px;
+  object-fit: contain;
 }
 
 .brand b,
@@ -232,7 +251,7 @@ textarea:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; 
 .sheet-top h2 { margin: 0; font-size: 17px; letter-spacing: -.02em; }
 .panel-title span { display: block; margin-top: 3px; color: var(--muted); font-size: 13px; }
 
-.mini-field { display: grid; min-width: 138px; gap: 4px; color: var(--muted); font-size: 12px; font-weight: 750; }
+.mini-field { display: grid; min-width: 138px; gap: 4px; color: var(--muted); font-size: 13px; font-weight: 750; }
 .mini-field input { width: 100%; min-height: 44px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: var(--ink); padding: 0 8px; }
 
 .summary { display: grid; grid-template-columns: repeat(3, 1fr); border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
@@ -244,7 +263,7 @@ textarea:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; 
 .metric[data-active='true'] span { color: var(--primary); font-weight: 850; }
 .metric[data-status='MC'] b { color: var(--red); }
 .metric[data-status='KURSUS'] b { color: var(--violet); }
-.metric[data-status='URUSAN_RASMI'] b { color: var(--accent); }
+.metric[data-status='URUSAN_RASMI'] b { color: var(--accent-ink); }
 .metric[data-status='CUTI'] b { color: var(--green); }
 .dashboard-tools { display: flex; flex-wrap: wrap; gap: 9px; padding: 12px 17px; border-bottom: 1px solid var(--line); background: color-mix(in srgb, var(--surface-2) 52%, var(--surface)); }
 .search-field { position: relative; display: flex; width: 100%; align-items: center; color: var(--muted); }
@@ -399,7 +418,7 @@ th:last-child { text-align: right; font-variant-numeric: tabular-nums; }
 .profile-identity h3 { margin: 0 0 9px; font-size: 22px; letter-spacing: -.03em; }
 .profile-details { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin: 0; }
 .profile-details div { min-width: 0; padding: 13px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface-2); }
-.profile-details dt { color: var(--muted); font-size: 12px; font-weight: 800; }
+.profile-details dt { color: var(--muted); font-size: 13px; font-weight: 800; }
 .profile-details dd { margin: 4px 0 0; font-size: 14px; font-weight: 800; }
 
 .visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
