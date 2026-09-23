@@ -8,14 +8,14 @@
 
 ## Public staff flow
 1. Fetch active roster from `GET /api/staff`.
-2. Submit one exception using `POST /api/exceptions`: staff ID, allowed status, ISO date.
+2. Submit one attendance record using `POST /api/exceptions`: staff ID, allowed status, ISO date.
 3. Server validates data, applies a small D1 per-IP rate limit and creates one record per staff/date; duplicate public submit returns `409` without overwrite.
 4. D1 trigger writes the immutable exception audit row in the same transaction.
 
 ## Admin flow
 - `POST /api/admin/login` compares the shared PIN with Cloudflare secret `ADMIN_PIN` and issues a six-hour signed cookie using `SESSION_SECRET`.
-- Authenticated admin can add/import roster names, correct an exception, see daily board and export/read a monthly summary.
-- No deletion endpoint.
+- Authenticated admin can add/import roster names, edit attendance records, see a daily board that refreshes every 15 seconds, and export/read a monthly summary.
+- Only authenticated admin can call `DELETE /api/admin/exceptions/:id`; the database builds one `EXCEPTION_DELETED` audit row from the persisted record in the same D1 batch before deletion.
 
 ## D1 tables
 - `staff` — ID, display name, active flag, timestamps.
@@ -33,5 +33,6 @@
 - Empty roster gives an admin onboarding prompt; no fake staff records are shipped.
 - Public submit accepts only five statuses and a real active staff ID.
 - Admin correction creates an audit record with the persisted exception ID.
+- Admin deletion requires an authenticated session; concurrent requests produce at most one deletion and one `EXCEPTION_DELETED` audit row.
 - Monthly endpoint groups records by staff and status.
 - Build/type checks and focused API unit tests pass locally before deployment.

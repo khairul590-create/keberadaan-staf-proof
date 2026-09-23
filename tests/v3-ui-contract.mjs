@@ -13,6 +13,12 @@ for (const control of ['fab', 'week', 'date', 'summary', 'metric', 'list', 'entr
 for (const endpoint of ['/api/staff', '/api/exceptions', '/api/admin/login', '/api/admin/logout', '/api/admin/dashboard?', '/api/admin/staff', '/api/admin/import', '/api/admin/report?', '/api/admin/exceptions']) {
   assert.ok(app.includes(endpoint), `missing ${endpoint}`)
 }
+assert.match(app, /Rekod Kehadiran/)
+assert.match(app, /method: 'DELETE'/)
+assert.match(app, /auto-refresh 15 saat/)
+assert.match(app, /entry-delete/)
+assert.match(css, /\.entry-delete/)
+assert.match(css, /\.delete-record/)
 assert.match(app, /credentials: 'include'/)
 assert.match(app, /function validDate/)
 assert.match(app, /event\.key === 'Tab'/)

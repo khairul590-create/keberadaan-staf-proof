@@ -122,6 +122,13 @@ function App() {
   const selectedDate = admin ? dashboardDate : publicDate
   const week = useMemo(() => weekDates(selectedDate), [selectedDate])
   const publicReady = staffState === 'ready' && activeStaff.length > 0
+  const metricItems = admin
+    ? [
+        { label: 'Jumlah rekod', total: records.length },
+        { label: 'Tidak hadir', total: records.filter((record) => record.status !== 'KELUAR_SEMENTARA').length },
+        { label: 'Keluar sementara', total: records.filter((record) => record.status === 'KELUAR_SEMENTARA').length },
+      ]
+    : dailyMetrics.map((status) => ({ label: statusLabel[status], total: '—' }))
 
   async function loadStaff(adminView = false) {
     setStaffState('loading')
@@ -136,15 +143,15 @@ function App() {
     }
   }
 
-  async function loadDashboard(date = dashboardDate) {
-    setDashboardBusy(true)
+  async function loadDashboard(date = dashboardDate, quiet = false) {
+    if (!quiet) setDashboardBusy(true)
     try {
       const data = await api<{ date: string; records: ExceptionRecord[] }>(`/api/admin/dashboard?date=${encodeURIComponent(date)}`, {}, true)
       setRecords(data.records)
     } catch (error) {
       setAdminNotice({ tone: 'error', text: safeError(error) })
     } finally {
-      setDashboardBusy(false)
+      if (!quiet) setDashboardBusy(false)
     }
   }
 
@@ -168,6 +175,12 @@ function App() {
     document.documentElement.dataset.theme = dark ? 'dark' : 'light'
     localStorage.setItem('keberadaan-theme', dark ? 'dark' : 'light')
   }, [dark])
+
+  useEffect(() => {
+    if (!admin || adminTab !== 'dashboard') return
+    const timer = window.setInterval(() => void loadDashboard(dashboardDate, true), 15_000)
+    return () => window.clearInterval(timer)
+  }, [admin, adminTab, dashboardDate])
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
@@ -218,7 +231,7 @@ function App() {
         method: 'POST',
         body: JSON.stringify({ staffId: publicStaffId, status: publicStatus, date: publicDate }),
       })
-      setPublicNotice({ tone: 'success', text: `Makluman ${data.record.staffName} telah diterima.` })
+      setPublicNotice({ tone: 'success', text: `Rekod kehadiran ${data.record.staffName} telah diterima.` })
       setPublicOpen(false)
       setPublicStatus('')
       publicTrigger.current?.focus()
@@ -345,7 +358,7 @@ function App() {
       setDashboardDate(correctionDate)
       await loadDashboard(correctionDate)
       setCorrectionStatus('')
-      setAdminNotice({ tone: 'success', text: 'Rekod pengecualian dikemas kini.' })
+      setAdminNotice({ tone: 'success', text: 'Rekod kehadiran dikemas kini.' })
     } catch (error) {
       setAdminNotice({ tone: 'error', text: safeError(error) })
     } finally {
@@ -367,6 +380,22 @@ function App() {
       await loadDashboard(date)
       setEditing(null)
       setAdminNotice({ tone: 'success', text: 'Rekod disimpan.' })
+    } catch (error) {
+      setAdminNotice({ tone: 'error', text: safeError(error) })
+    } finally {
+      setCorrectionBusy(false)
+    }
+  }
+
+  async function removeException(record: ExceptionRecord) {
+    if (!window.confirm(`Padam rekod kehadiran ${record.staffName} pada ${record.date}?`)) return
+    setCorrectionBusy(true)
+    setAdminNotice(null)
+    try {
+      await api(`/api/admin/exceptions/${encodeURIComponent(record.id)}`, { method: 'DELETE' }, true)
+      if (editing?.id === record.id) closeEditing()
+      await loadDashboard(dashboardDate)
+      setAdminNotice({ tone: 'success', text: 'Rekod kehadiran telah dipadam.' })
     } catch (error) {
       setAdminNotice({ tone: 'error', text: safeError(error) })
     } finally {
@@ -425,7 +454,7 @@ function App() {
           <button className="fab" type="button" onClick={() => void selectAdminTab('correction')}>Tambah atau betulkan rekod</button>
         ) : (
           <button className="fab" ref={publicTrigger} type="button" aria-expanded={publicOpen} disabled={!publicReady} onClick={() => { setPublicNotice(null); setPublicOpen(true) }}>
-            {staffState === 'loading' ? 'Memuatkan borang…' : publicReady ? 'Rekod pengecualian' : 'Borang belum tersedia'}
+            {staffState === 'loading' ? 'Memuatkan borang…' : publicReady ? 'Rekod Kehadiran' : 'Borang belum tersedia'}
           </button>
         )}
 
@@ -438,14 +467,14 @@ function App() {
         <div className="layout">
           <section className="panel daily-panel" aria-labelledby="daily-title">
             <div className="panel-title">
-              <div><h2 id="daily-title">Keberadaan hari ini</h2><span>{admin ? `${records.length} rekod` : publicReady ? 'Rekod dilindungi' : staffState === 'error' ? 'Senarai staf tidak tersedia' : 'Belum sedia'}</span></div>
+              <div><h2 id="daily-title">Keberadaan hari ini</h2><span>{admin ? `${records.length} rekod · auto-refresh 15 saat` : publicReady ? 'Rekod dilindungi' : staffState === 'error' ? 'Senarai staf tidak tersedia' : 'Belum sedia'}</span></div>
               {admin && <label className="mini-field">Tarikh<input type="date" value={dashboardDate} onChange={(event) => chooseDate(event.target.value)} /></label>}
             </div>
             <div className={`summary ${admin ? '' : 'privacy-summary'}`}>
-              {dailyMetrics.map((status) => <div className="metric" key={status}><b>{admin ? records.filter((record) => record.status === status).length : '—'}</b><span>{statusLabel[status]}</span></div>)}
+              {metricItems.map((item) => <div className="metric" key={item.label}><b>{item.total}</b><span>{item.label}</span></div>)}
             </div>
             {admin ? (
-              dashboardBusy ? <div className="state-message" role="status">Memuatkan rekod…</div> : <ul className="list">{records.length === 0 ? <li className="empty-entry">Tiada rekod bagi tarikh ini.</li> : records.map((record) => <li className="entry" key={record.id}><i className="dot" data-status={record.status} aria-hidden="true" /><div><b>{record.staffName}</b><small>{statusLabel[record.status]} · {record.date}</small></div><span className="pill" data-status={record.status}>{statusLabel[record.status]}</span><button className="entry-edit" type="button" onClick={(event) => { editTrigger.current = event.currentTarget; setEditing(record) }}>Edit</button></li>)}</ul>
+              dashboardBusy ? <div className="state-message" role="status">Memuatkan rekod…</div> : <ul className="list">{records.length === 0 ? <li className="empty-entry">Tiada rekod bagi tarikh ini.</li> : records.map((record) => <li className="entry" key={record.id}><i className="dot" data-status={record.status} aria-hidden="true" /><div><b>{record.staffName}</b><small>{statusLabel[record.status]} · {record.date}</small></div><span className="pill" data-status={record.status}>{statusLabel[record.status]}</span><div className="entry-actions"><button className="entry-edit" type="button" onClick={(event) => { editTrigger.current = event.currentTarget; setEditing(record) }}>Edit</button><button className="entry-delete" type="button" disabled={correctionBusy} onClick={() => void removeException(record)}>Padam</button></div></li>)}</ul>
             ) : (
               <ul className="list"><li className="empty-entry">{staffState === 'loading' ? 'Memuatkan senarai staf…' : staffState === 'error' ? staffError : publicReady ? 'Borang tersedia. Makluman harian hanya boleh dilihat oleh pentadbir.' : 'Senarai staf sedang disediakan oleh pentadbir.'}</li></ul>
             )}
@@ -496,9 +525,9 @@ function App() {
           </div>
         </section>}
 
-        {admin && adminTab === 'correction' && <section className="admin-grid correction-grid" aria-label="Tambah atau pembetulan rekod">
+        {admin && adminTab === 'correction' && <section className="admin-grid correction-grid" aria-label="Tambah atau pembetulan rekod kehadiran">
           <form className="panel admin-panel correction-form" onSubmit={saveCorrection}>
-            <div className="panel-title"><div><h2>Tambah atau betulkan</h2><span>Satu rekod staf bagi satu tarikh</span></div></div>
+            <div className="panel-title"><div><h2>Tambah atau betulkan rekod kehadiran</h2><span>Satu rekod staf bagi satu tarikh</span></div></div>
             <label className="field">Nama staf<select value={correctionStaffId} onChange={(event) => setCorrectionStaffId(event.target.value)} required><option value="">Pilih staf</option>{activeStaff.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
             <label className="field">Status<select value={correctionStatus} onChange={(event) => setCorrectionStatus(event.target.value as SelectedStatus)} required><option value="">Pilih status</option>{STATUSES.map((status) => <option key={status} value={status}>{statusLabel[status]}</option>)}</select></label>
             <label className="field">Tarikh<input type="date" value={correctionDate} onChange={(event) => setCorrectionDate(event.target.value)} required /></label>
@@ -519,14 +548,14 @@ function App() {
 
       {!admin && publicOpen && <><div className="scrim visible" onClick={closePublic} aria-hidden="true" /><section className="sheet" role="dialog" aria-modal="true" aria-labelledby="public-form-title">
         <div className="handle" />
-        <div className="sheet-top"><h2 id="public-form-title">Rekod pengecualian</h2><button className="close" type="button" aria-label="Tutup borang" onClick={closePublic}>×</button></div>
+        <div className="sheet-top"><h2 id="public-form-title">Rekod Kehadiran</h2><button className="close" type="button" aria-label="Tutup borang" onClick={closePublic}>×</button></div>
         <div className="progress" aria-label="Borang satu langkah"><i className="active" /><i className="active" /><i className="active" /></div>
         <form className="sheet-form" onSubmit={submitPublic}>
           {publicNotice?.tone === 'error' && <div className="notice error" role="alert">{publicNotice.text}</div>}
           <label className="field" htmlFor="public-staff">Nama staf<select id="public-staff" autoFocus value={publicStaffId} onChange={(event) => setPublicStaffId(event.target.value)} required><option value="">Pilih nama</option>{activeStaff.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
-          <fieldset className="field"><legend>Pengecualian hari ini</legend><div className="states" role="group" aria-label="Pilih status">{STATUSES.map((status) => <button className="state" key={status} type="button" aria-pressed={publicStatus === status} onClick={() => setPublicStatus(status)}>{statusLabel[status]}<small>{statusDetail[status]}</small></button>)}</div></fieldset>
+          <fieldset className="field"><legend>Status kehadiran</legend><div className="states" role="group" aria-label="Pilih status">{STATUSES.map((status) => <button className="state" key={status} type="button" aria-pressed={publicStatus === status} onClick={() => setPublicStatus(status)}>{statusLabel[status]}<small>{statusDetail[status]}</small></button>)}</div></fieldset>
           <label className="field" htmlFor="public-date">Tarikh<input id="public-date" type="date" value={publicDate} onChange={(event) => chooseDate(event.target.value)} required /></label>
-          <button className="save" type="submit" disabled={publicBusy || !publicReady}>{publicBusy ? 'Menyimpan…' : 'Simpan makluman'}</button>
+          <button className="save" type="submit" disabled={publicBusy || !publicReady}>{publicBusy ? 'Menyimpan…' : 'Simpan kehadiran'}</button>
         </form>
       </section></>}
 
@@ -547,6 +576,7 @@ function App() {
           <label className="field" htmlFor="edit-status">Status<select id="edit-status" name="status" autoFocus defaultValue={editing.status}>{STATUSES.map((status) => <option key={status} value={status}>{statusLabel[status]}</option>)}</select></label>
           <label className="field" htmlFor="edit-date">Tarikh<input id="edit-date" name="date" type="date" defaultValue={editing.date} required /></label>
           <button className="save" type="submit" disabled={correctionBusy}>{correctionBusy ? 'Menyimpan…' : 'Simpan rekod'}</button>
+          <button className="delete-record" type="button" disabled={correctionBusy} onClick={() => void removeException(editing)}>Padam rekod</button>
         </form>
       </section></>}
     </>

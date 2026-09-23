@@ -13,6 +13,9 @@ class FakeD1 {
     this.rateLimits = new Map()
     this.failAudit = false
     this.batchTail = Promise.resolve()
+    this.exceptionReadGate = null
+    this.exceptionReadCount = 0
+    this.releaseExceptionReads = null
   }
 
   batch(statements) {
@@ -35,6 +38,10 @@ class FakeD1 {
     return pending
   }
 
+  blockTwoExceptionReads() {
+    this.exceptionReadGate = new Promise((resolve) => { this.releaseExceptionReads = resolve })
+  }
+
   auditException(action, before, record) {
     if (this.failAudit) throw new Error('audit unavailable')
     this.audit.push({
@@ -53,7 +60,15 @@ class FakeD1 {
     let values = []
     return {
       bind(...input) { values = input; return this },
-      first: async () => clone(this.query(sql, values).at(0) || null),
+      first: async () => {
+        if (sql.startsWith('SELECT * FROM exceptions WHERE id = ?') && this.exceptionReadGate) {
+          this.exceptionReadCount += 1
+          if (this.exceptionReadCount === 2) this.releaseExceptionReads?.()
+          await this.exceptionReadGate
+          this.exceptionReadGate = null
+        }
+        return clone(this.query(sql, values).at(0) || null)
+      },
       all: async () => ({ results: clone(this.query(sql, values)) }),
       run: async () => this.run(sql, values),
     }
@@ -107,6 +122,22 @@ class FakeD1 {
       this.rateLimits.set(key, (this.rateLimits.get(key) || 0) + 1)
       return { meta: { changes: 1 } }
     }
+    if (sql.startsWith('INSERT INTO audit_log') && sql.includes('FROM exceptions WHERE id = ?')) {
+      if (this.failAudit) throw new Error('audit unavailable')
+      const record = this.exceptions.find((item) => item.id === values[5])
+      if (!record) return { meta: { changes: 0 } }
+      this.audit.push({
+        id: values[0],
+        action: values[1],
+        entity: values[2],
+        record_id: record.id,
+        before: { id: record.id, staffId: record.staff_id, status: record.status, date: record.date, updatedAt: record.updated_at },
+        after: null,
+        actor: values[3],
+        created_at: values[4],
+      })
+      return { meta: { changes: 1 } }
+    }
     if (sql.startsWith('INSERT INTO audit_log')) {
       if (this.failAudit) throw new Error('audit unavailable')
       this.audit.push({ id: values[0], action: values[1], entity: values[2], record_id: values[3], before: values[4] && JSON.parse(values[4]), after: values[5] && JSON.parse(values[5]), actor: values[6], created_at: values[7] })
@@ -147,6 +178,12 @@ class FakeD1 {
       const next = { ...record, status, date, created_by: createdBy, updated_at: updatedAt }
       this.auditException('EXCEPTION_CORRECTED', clone(record), next)
       Object.assign(record, next)
+      return { meta: { changes: 1 } }
+    }
+    if (sql.startsWith('DELETE FROM exceptions WHERE id = ?')) {
+      const index = this.exceptions.findIndex((item) => item.id === values[0])
+      if (index === -1) return { meta: { changes: 0 } }
+      this.exceptions.splice(index, 1)
       return { meta: { changes: 1 } }
     }
     throw new Error(`SQL mutation not implemented: ${sql}`)
@@ -292,6 +329,41 @@ test('admin corrections are audited and visible through dashboard and monthly re
   const report = await call(DB, 'admin/report?month=2026-09', { cookie })
   assert.deepEqual((await report.json()).rows, [{ staffName: 'Cikgu Hana', status: 'KURSUS', total: 1 }])
   assert.equal((await call(DB, 'admin/report?month=2026-13', { cookie })).status, 400)
+})
+
+test('only an admin can delete a dashboard attendance record and the audit keeps its deletion trail', async () => {
+  const DB = new FakeD1()
+  const cookie = await login(DB)
+  const created = await call(DB, 'admin/exceptions', { method: 'POST', cookie, data: { staffId: 'staff-1', status: 'CUTI', date: '2026-09-24' } })
+  const record = (await created.json()).record
+
+  assert.equal((await call(DB, `admin/exceptions/${record.id}`, { method: 'DELETE' })).status, 401)
+  DB.blockTwoExceptionReads()
+  const [first, second] = await Promise.all([
+    call(DB, `admin/exceptions/${record.id}`, { method: 'DELETE', cookie }),
+    call(DB, `admin/exceptions/${record.id}`, { method: 'DELETE', cookie }),
+  ])
+  assert.deepEqual([first.status, second.status].sort(), [200, 404])
+  assert.equal(DB.exceptions.length, 0)
+  assert.equal(DB.audit.filter((entry) => entry.action === 'EXCEPTION_DELETED').length, 1)
+  assert.equal(DB.audit.at(-1).action, 'EXCEPTION_DELETED')
+  assert.equal(DB.audit.at(-1).entity, 'exception')
+  assert.equal(DB.audit.at(-1).record_id, record.id)
+  assert.equal(DB.audit.at(-1).actor, 'admin')
+  assert.deepEqual((await (await call(DB, 'admin/dashboard?date=2026-09-24', { cookie })).json()).records, [])
+})
+
+test('a deletion audit failure rolls back the attendance record', async () => {
+  const DB = new FakeD1()
+  const cookie = await login(DB)
+  const created = await call(DB, 'admin/exceptions', { method: 'POST', cookie, data: { staffId: 'staff-1', status: 'MC', date: '2026-09-25' } })
+  const record = (await created.json()).record
+  DB.failAudit = true
+
+  await assert.rejects(call(DB, `admin/exceptions/${record.id}`, { method: 'DELETE', cookie }), /audit unavailable/)
+  assert.equal(DB.exceptions.length, 1)
+  assert.equal(DB.exceptions[0].id, record.id)
+  assert.equal(DB.audit.filter((entry) => entry.action === 'EXCEPTION_DELETED').length, 0)
 })
 
 test('admin can edit a roster name and active flag without a delete endpoint', async () => {

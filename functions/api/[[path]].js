@@ -43,6 +43,10 @@ const auditStatement = (db, action, entity, recordId, before, after, actor = 'pu
   .prepare('INSERT INTO audit_log (id, action, entity, record_id, before_json, after_json, actor, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
   .bind(crypto.randomUUID(), action, entity, recordId, before ? JSON.stringify(before) : null, after ? JSON.stringify(after) : null, actor, now())
 
+const deletionAuditStatement = (db, id) => db
+  .prepare("INSERT INTO audit_log (id, action, entity, record_id, before_json, after_json, actor, created_at) SELECT ?, ?, ?, id, json_object('id', id, 'staffId', staff_id, 'status', status, 'date', date, 'updatedAt', updated_at), NULL, ?, ? FROM exceptions WHERE id = ?")
+  .bind(crypto.randomUUID(), 'EXCEPTION_DELETED', 'exception', 'admin', now(), id)
+
 const runAudited = (db, mutation, action, entity, recordId, before, after, actor) => db.batch([
   mutation,
   auditStatement(db, action, entity, recordId, before, after, actor),
@@ -222,6 +226,16 @@ async function updateException(request, env, id) {
   return json({ record: { ...record, staffName: staff.name } })
 }
 
+async function deleteException(request, env, id) {
+  const denied = await requireAdmin(request, env); if (denied) return denied
+  const [, deleted] = await env.DB.batch([
+    deletionAuditStatement(env.DB, id),
+    env.DB.prepare('DELETE FROM exceptions WHERE id = ?').bind(id),
+  ])
+  if (Number(deleted?.meta?.changes || 0) !== 1) return fail('Rekod tidak ditemui.', 404)
+  return json({ ok: true })
+}
+
 export async function onRequest(context) {
   const { request, env } = context
   if (!env.DB) return fail('Pangkalan data D1 belum diikat pada Pages.', 503)
@@ -267,5 +281,6 @@ export async function onRequest(context) {
   }
   const match = path.match(/^admin\/exceptions\/([\w-]+)$/)
   if (match && method === 'PATCH') return updateException(request, env, match[1])
+  if (match && method === 'DELETE') return deleteException(request, env, match[1])
   return fail('Laluan API tidak ditemui.', 404)
 }
