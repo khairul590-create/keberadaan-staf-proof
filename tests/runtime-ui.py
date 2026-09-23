@@ -14,9 +14,14 @@ class QuietHandler(SimpleHTTPRequestHandler):
 
 
 def run_viewport(browser, base, label, viewport):
-    staff = [{'id': 'staff-1', 'name': 'Cikgu Ujian', 'active': True}]
+    staff = [
+        {'id': 'staff-1', 'name': 'Cikgu Ujian', 'active': True},
+        {'id': 'staff-2', 'name': 'Cikgu Pantau', 'active': True},
+    ]
     records = []
     calls = []
+    public_dashboard_reads = 0
+    inject_on_next_public_refresh = False
 
     def reply(route, status, data):
         route.fulfill(status=status, content_type='application/json', body=__import__('json').dumps(data))
@@ -37,7 +42,12 @@ def run_viewport(browser, base, label, viewport):
         if path == '/api/admin/logout' and method == 'POST':
             return reply(route, 200, {'ok': True})
         if path == '/api/dashboard' and method == 'GET':
+            nonlocal public_dashboard_reads, inject_on_next_public_refresh
+            public_dashboard_reads += 1
             date = parse_qs(parsed.query).get('date', [''])[0]
+            if inject_on_next_public_refresh:
+                inject_on_next_public_refresh = False
+                records.append({'id': 'record-refresh', 'staffId': 'staff-2', 'staffName': 'Cikgu Pantau', 'status': 'MC', 'date': date, 'updatedAt': '2026-09-23T00:00:00Z'})
             return reply(route, 200, {'date': date, 'records': [item for item in records if item['date'] == date]})
         if path == '/api/admin/dashboard' and method == 'GET':
             date = parse_qs(parsed.query).get('date', [''])[0]
@@ -87,6 +97,7 @@ def run_viewport(browser, base, label, viewport):
     page.on('pageerror', lambda error: errors.append(str(error)))
     page.route('**/api/**', api)
     page.goto(base, wait_until='networkidle')
+    assert page.locator('svg.svg-icon').count() >= 1
 
     page.locator('.week .date.active').click()
     page.get_by_role('button', name='Rekod Kehadiran').click()
@@ -103,6 +114,7 @@ def run_viewport(browser, base, label, viewport):
     page.locator('.sheet .save').click()
     page.get_by_text('Rekod kehadiran Cikgu Ujian telah diterima.').wait_for()
     assert page.locator('.daily-panel .entry').count() == 1
+    assert page.locator('.daily-panel .entry[data-fresh="true"]').count() == 1
     assert page.get_by_role('button', name='Edit').count() == 0
     assert page.get_by_role('button', name='Padam').count() == 0
     assert page.get_by_role('button', name='Muat turun Excel (CSV)').count() == 0
@@ -110,10 +122,12 @@ def run_viewport(browser, base, label, viewport):
     name_trigger = page.get_by_role('button', name='Cikgu Ujian')
     name_trigger.click()
     page.get_by_role('heading', name='Kad Kehadiran').wait_for()
+    assert page.locator('.profile-card').evaluate("(element) => getComputedStyle(element).animationName === 'sheet-in'")
     assert page.locator('.profile-card').get_by_text('Cuti', exact=True).count() >= 1
     assert page.locator('.profile-card').get_by_text('Tiada di sekolah', exact=True).count() == 1
     assert page.locator('.profile-card').get_by_role('button', name='Edit').count() == 0
     assert page.locator('.profile-card').get_by_role('button', name='Padam').count() == 0
+    page.wait_for_timeout(260)
     page.screenshot(path=f'/tmp/keberadaan-hero-card-{label}.png', full_page=True)
     page.keyboard.press('Escape')
     assert page.evaluate("document.activeElement?.textContent?.trim() === 'Cikgu Ujian'")
@@ -127,17 +141,22 @@ def run_viewport(browser, base, label, viewport):
     assert page.locator('.daily-panel .entry').count() == 1
     page.get_by_label('Cari nama dalam rekod').fill('')
     page.locator('.metric[data-status="ALL"]').click()
+    inject_on_next_public_refresh = True
     public_dashboard_fetches = sum(method == 'GET' and path == '/api/dashboard' for method, path, _ in calls)
-    page.wait_for_timeout(15_200)
+    page.locator('.daily-panel .entry[data-fresh="true"]').wait_for(timeout=20_000)
     assert sum(method == 'GET' and path == '/api/dashboard' for method, path, _ in calls) > public_dashboard_fetches
+    assert page.locator('.daily-panel .entry[data-fresh="true"]').count() == 1
+    assert page.locator('.daily-panel .entry[data-fresh="true"]').get_by_text('Cikgu Pantau', exact=True).count() == 1
+    page.wait_for_timeout(800)
+    assert page.locator('.daily-panel .entry[data-fresh="true"]').count() == 0
 
     page.get_by_role('button', name='Pentadbir').click()
     page.locator('#admin-pin').fill('40074007')
     page.locator('.sheet .save').click()
     page.get_by_role('button', name='Log keluar').wait_for()
     page.get_by_text('Cikgu Ujian').wait_for()
-    assert page.get_by_role('button', name='Edit').count() == 1
-    assert page.get_by_role('button', name='Padam').count() == 1
+    assert page.get_by_role('button', name='Edit').count() == 2
+    assert page.get_by_role('button', name='Padam').count() == 2
     for name in ['Muat turun Excel (CSV)', 'Cetak / Simpan PDF']:
         assert page.get_by_role('button', name=name).evaluate('(element) => element.getBoundingClientRect().right <= window.innerWidth')
     page.get_by_role('button', name='Cetak / Simpan PDF').click()
@@ -162,16 +181,19 @@ def run_viewport(browser, base, label, viewport):
     page.get_by_text('Staf telah ditambah.').wait_for()
 
     page.get_by_role('button', name='Pembetulan').click()
-    page.locator('.correction-form select').nth(0).select_option('staff-1')
+    page.locator('.correction-form select').nth(0).select_option('staff-3')
     page.locator('.correction-form select').nth(1).select_option('KURSUS')
     page.locator('.correction-form .save').click()
     page.get_by_text('Rekod kehadiran dikemas kini.').wait_for()
+    assert page.locator('.daily-panel .entry[data-fresh="true"]').count() == 1
+    assert page.locator('.daily-panel .entry[data-fresh="true"]').get_by_text('Cikgu Baharu', exact=True).count() == 1
 
     page.get_by_role('button', name='Hari ini').click()
-    page.get_by_role('button', name='Edit').click()
+    cikgu_ujian_entry = page.locator('.daily-panel .entry').filter(has_text='Cikgu Ujian')
+    cikgu_ujian_entry.get_by_role('button', name='Edit').click()
     page.keyboard.press('Escape')
     assert page.evaluate("document.activeElement?.textContent?.trim() === 'Edit'")
-    page.get_by_role('button', name='Edit').click()
+    cikgu_ujian_entry.get_by_role('button', name='Edit').click()
     page.locator('#edit-status').select_option('MC')
     page.locator('.sheet .save').click()
     page.get_by_text('Rekod disimpan.').wait_for()
@@ -179,6 +201,7 @@ def run_viewport(browser, base, label, viewport):
     page.get_by_role('heading', name='Laporan bulanan').wait_for()
     page.get_by_text('Laporan visual').wait_for()
     assert page.locator('.report-bars .report-bar').count() == 5
+    page.wait_for_timeout(620)
     page.screenshot(path=f'/tmp/keberadaan-monthly-visual-{label}.png', full_page=True)
     report_month = page.locator('.report-panel .mini-field input[type=month]')
     assert report_month.evaluate('(element) => element.getBoundingClientRect().height >= 44')
@@ -187,9 +210,10 @@ def run_viewport(browser, base, label, viewport):
 
     page.get_by_role('button', name='Hari ini').click()
     page.once('dialog', lambda dialog: dialog.accept())
-    page.get_by_role('button', name='Padam').click()
+    page.locator('.daily-panel .entry').filter(has_text='Cikgu Ujian').get_by_role('button', name='Padam').click()
     page.get_by_text('Rekod kehadiran telah dipadam.').wait_for()
-    assert page.get_by_text('Tiada rekod bagi tarikh ini.').count() == 1
+    assert page.locator('.daily-panel .entry').count() == 2
+    assert page.get_by_text('Cikgu Baharu', exact=True).count() == 1
     assert page.evaluate('document.documentElement.scrollWidth <= document.documentElement.clientWidth')
     assert not errors, errors
     page.close()
@@ -201,6 +225,28 @@ def run_viewport(browser, base, label, viewport):
     assert any(method == 'POST' and path == '/api/admin/exceptions' for method, path, _ in calls)
     assert any(method == 'PATCH' and path.startswith('/api/admin/exceptions/') for method, path, _ in calls)
     assert any(method == 'DELETE' and path.startswith('/api/admin/exceptions/') for method, path, _ in calls)
+
+
+def verify_reduced_motion(browser, base):
+    record = {'id': 'record-1', 'staffId': 'staff-1', 'staffName': 'Cikgu Ujian', 'status': 'CUTI', 'date': '2026-09-23', 'updatedAt': '2026-09-23T00:00:00Z'}
+
+    def api(route):
+        path = urlparse(route.request.url).path
+        if path == '/api/staff':
+            return route.fulfill(content_type='application/json', body='{"staff":[{"id":"staff-1","name":"Cikgu Ujian"}]}')
+        if path == '/api/dashboard':
+            return route.fulfill(content_type='application/json', body='{"date":"2026-09-23","records":[' + __import__('json').dumps(record) + ']}')
+        return route.fulfill(content_type='application/json', body='{}')
+
+    page = browser.new_page(viewport={'width': 390, 'height': 844})
+    page.emulate_media(reduced_motion='reduce')
+    page.route('**/api/**', api)
+    page.goto(base, wait_until='networkidle')
+    page.get_by_role('button', name='Cikgu Ujian').click()
+    page.get_by_role('heading', name='Kad Kehadiran').wait_for()
+    assert page.locator('.profile-card').evaluate("(element) => getComputedStyle(element).animationName === 'none'")
+    assert page.locator('.metric').first.evaluate("(element) => getComputedStyle(element).transitionDuration === '0s'")
+    page.close()
 
 
 def run():
@@ -215,6 +261,7 @@ def run():
             browser = playwright.chromium.launch(headless=True)
             run_viewport(browser, base, 'mobile', {'width': 390, 'height': 844})
             run_viewport(browser, base, 'desktop', {'width': 1280, 'height': 900})
+            verify_reduced_motion(browser, base)
             browser.close()
     finally:
         server.shutdown()

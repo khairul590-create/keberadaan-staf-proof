@@ -18,6 +18,7 @@
 - `POST /api/admin/login` compares the shared PIN with Cloudflare secret `ADMIN_PIN` and issues a six-hour signed cookie using `SESSION_SECRET`.
 - Authenticated admin can add/import roster names, edit attendance records, see a daily board that refreshes every 15 seconds, view a CSS-native monthly status chart, download the full current daily board as UTF-8 Excel-compatible CSV, or use browser Print → Save as PDF.
 - CSV export covers all loaded records for the selected date, not merely a search/filter subset, and escapes formula-leading values before download.
+- UI action icons are inline SVG using `currentColor`; operational motion is limited to dialog entry, button press, filter transition, one-time new-record cue and report-bar fill. `prefers-reduced-motion: reduce` disables all of it.
 - Only authenticated admin can call `DELETE /api/admin/exceptions/:id`; the database builds one `EXCEPTION_DELETED` audit row from the persisted record in the same D1 batch before deletion.
 
 ## D1 tables

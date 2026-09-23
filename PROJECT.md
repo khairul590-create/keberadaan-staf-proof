@@ -54,6 +54,7 @@ V1 berjaya apabila seorang staf boleh memilih namanya, memasukkan status dan tar
 - Struktur yang diambil: ringkasan operasi dahulu, senarai tindakan utama, sidebar desktop yang jadi navigasi bawah pada telefon.
 - Penyesuaian penting: tiada sidebar atau KPI grid berlebihan pada telefon. Skrin staf ialah satu tugasan ringkas; skrin admin memaparkan pengecualian hari ini dahulu.
 - Minimum kebolehcapaian: 44px sentuhan, teks fungsi sekurang-kurangnya 16px pada telefon, status tidak bergantung kepada warna sahaja, reduced motion.
+- Motion sistem ialah state-driven sahaja: dialog masuk, button press, filter, rekod baharu dan bar laporan. SVG inline ikut `currentColor`; tiada icon CDN, loop, parallax atau motion hiasan.
 
 ## Acceptance and release gate
 - Browser telefon 390px dan desktop tiada overflow/overlap.

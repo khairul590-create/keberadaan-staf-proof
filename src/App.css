@@ -55,7 +55,17 @@ textarea { font: inherit; }
 
 button { cursor: pointer; }
 
+button:not([disabled]) { transition: transform .14s cubic-bezier(.22, 1, .36, 1), border-color .16s ease, background-color .16s ease, color .16s ease; }
+button:not([disabled]):active { transform: scale(.985); }
+
 button:disabled { cursor: not-allowed; opacity: .6; }
+
+.svg-icon { width: 18px; height: 18px; flex: 0 0 18px; }
+
+@keyframes scrim-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes sheet-in { from { opacity: 0; transform: translateY(14px) scale(.985); } to { opacity: 1; transform: translateY(0) scale(1); } }
+@keyframes record-in { 0% { background: color-mix(in srgb, var(--primary) 18%, var(--surface)); transform: translateY(7px); } 100% { background: var(--surface); transform: translateY(0); } }
+@keyframes bar-in { from { transform: scaleX(0); } to { transform: scaleX(1); } }
 
 button:focus-visible,
 input:focus-visible,
@@ -226,7 +236,7 @@ textarea:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; 
 .mini-field input { width: 100%; min-height: 44px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: var(--ink); padding: 0 8px; }
 
 .summary { display: grid; grid-template-columns: repeat(3, 1fr); border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
-.metric { min-width: 0; padding: 13px 11px; border: 0; border-right: 1px solid var(--line); background: var(--surface); color: var(--ink); text-align: left; }
+.metric { min-width: 0; padding: 13px 11px; border: 0; border-right: 1px solid var(--line); background: var(--surface); color: var(--ink); text-align: left; transition: transform .16s cubic-bezier(.22, 1, .36, 1), background-color .16s ease, color .16s ease; }
 .metric:last-child { border-right: 0; }
 .metric b { display: block; font-size: 22px; line-height: 1; }
 .metric span { color: var(--muted); font-size: 13px; }
@@ -237,14 +247,17 @@ textarea:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; 
 .metric[data-status='URUSAN_RASMI'] b { color: var(--accent); }
 .metric[data-status='CUTI'] b { color: var(--green); }
 .dashboard-tools { display: flex; flex-wrap: wrap; gap: 9px; padding: 12px 17px; border-bottom: 1px solid var(--line); background: color-mix(in srgb, var(--surface-2) 52%, var(--surface)); }
-.dashboard-tools > input { width: 100%; min-height: 44px; border: 1px solid var(--line); border-radius: 9px; background: var(--surface); color: var(--ink); padding: 0 12px; }
+.search-field { position: relative; display: flex; width: 100%; align-items: center; color: var(--muted); }
+.search-field .svg-icon { position: absolute; left: 12px; pointer-events: none; }
+.search-field input { width: 100%; min-height: 44px; border: 1px solid var(--line); border-radius: 9px; background: var(--surface); color: var(--ink); padding: 0 12px 0 40px; }
 .export-actions { display: flex; width: 100%; gap: 8px; }
-.export-actions .text-button { flex: 1; white-space: nowrap; }
+.export-actions .text-button { display: inline-flex; align-items: center; justify-content: center; gap: 7px; flex: 1; white-space: nowrap; }
 
 .list,
 .staff-list { margin: 0; padding: 0; list-style: none; }
 
 .entry { gap: 12px; padding: 13px 17px; border-bottom: 1px solid var(--line); }
+.entry[data-fresh='true'] { animation: record-in .72s cubic-bezier(.22, 1, .36, 1) both; }
 .entry:last-child { border: 0; }
 .entry > div { min-width: 0; }
 .entry-name { max-width: 100%; margin: 0; padding: 0; border: 0; background: transparent; color: var(--ink); font: inherit; text-align: left; }
@@ -330,7 +343,7 @@ textarea:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; 
 .report-bars { display: grid; gap: 10px; }
 .report-bar { display: grid; grid-template-columns: 106px minmax(0, 1fr) 28px; align-items: center; gap: 9px; font-size: 13px; font-weight: 800; }
 .report-track { height: 10px; overflow: hidden; border-radius: 999px; background: var(--line); }
-.report-track i { display: block; height: 100%; border-radius: inherit; background: var(--primary); }
+.report-track i { display: block; height: 100%; border-radius: inherit; background: var(--primary); transform-origin: left; animation: bar-in .58s cubic-bezier(.22, 1, .36, 1) both; }
 .report-bar[data-status='MC'] .report-track i { background: var(--red); }
 .report-bar[data-status='KURSUS'] .report-track i { background: var(--violet); }
 .report-bar[data-status='URUSAN_RASMI'] .report-track i { background: var(--accent); }
@@ -345,6 +358,7 @@ td:last-child,
 th:last-child { text-align: right; font-variant-numeric: tabular-nums; }
 
 .scrim { position: fixed; z-index: 10; inset: 0; background: rgba(5, 13, 23, .54); }
+.scrim.visible { animation: scrim-in .16s ease-out both; }
 .sheet {
   position: fixed;
   z-index: 11;
@@ -357,11 +371,12 @@ th:last-child { text-align: right; font-variant-numeric: tabular-nums; }
   border-radius: 22px 22px 0 0;
   background: var(--surface);
   box-shadow: var(--sheet-shadow);
+  animation: sheet-in .22s cubic-bezier(.22, 1, .36, 1) both;
 }
 .handle { width: 44px; height: 5px; margin: 0 auto 14px; border-radius: 999px; background: var(--line); }
 .sheet-top { justify-content: space-between; gap: 12px; margin-bottom: 18px; }
 .sheet-top h2 { font-size: 22px; letter-spacing: -.03em; }
-.close { width: 46px; min-width: 46px; min-height: 46px; border-radius: 50%; font-size: 24px; line-height: 1; }
+.close { display: grid; width: 46px; min-width: 46px; min-height: 46px; place-items: center; border-radius: 50%; font-size: 24px; line-height: 1; }
 .progress { display: flex; gap: 5px; margin: 0 0 20px; }
 .progress i { height: 4px; flex: 1; border-radius: 99px; background: var(--line); }
 .progress i.active { background: var(--primary); }
@@ -395,7 +410,7 @@ th:last-child { text-align: right; font-variant-numeric: tabular-nums; }
   .layout { grid-template-columns: minmax(0, 1.75fr) minmax(250px, .8fr); }
   .summary { grid-template-columns: repeat(6, minmax(0, 1fr)); }
   .dashboard-tools { align-items: center; }
-  .dashboard-tools > input { flex: 1 1 240px; width: auto; }
+  .search-field { flex: 1 1 240px; width: auto; }
   .export-actions { width: auto; }
   .export-actions .text-button { flex: 0 0 auto; }
   .aside { height: fit-content; }
@@ -440,5 +455,6 @@ th:last-child { text-align: right; font-variant-numeric: tabular-nums; }
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
-  *::after { scroll-behavior: auto !important; transition: none !important; }
+  *::after { scroll-behavior: auto !important; transition: none !important; animation: none !important; }
+  button:not([disabled]):active { transform: none !important; }
 }

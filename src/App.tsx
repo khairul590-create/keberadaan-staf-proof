@@ -13,6 +13,7 @@ type Notice = { tone: 'error' | 'success'; text: string }
 type Staff = { id: string; name: string; active?: boolean }
 type ExceptionRecord = { id: string; staffId: string; staffName: string; status: Status; date: string; updatedAt: string }
 type ReportRow = { staffName: string; status: Status; total: number }
+type IconName = 'search' | 'download' | 'print' | 'close'
 
 const statusLabel: Record<Status, string> = {
   CUTI: 'Cuti',
@@ -73,6 +74,13 @@ function dateCaption(date: string) {
   return `${weekday} · ${dayMonth}`
 }
 
+function Icon({ name }: { name: IconName }) {
+  if (name === 'search') return <svg className="svg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><circle cx="11" cy="11" r="6.5" /><path d="m16 16 4 4" /></svg>
+  if (name === 'download') return <svg className="svg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M12 3v11" /><path d="m8 10 4 4 4-4" /><path d="M5 20h14" /></svg>
+  if (name === 'print') return <svg className="svg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M7 8V3h10v5" /><path d="M6 17H4V9h16v8h-2" /><path d="M7 14h10v7H7z" /></svg>
+  return <svg className="svg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18" /></svg>
+}
+
 function safeError(value: unknown) {
   return value instanceof Error ? value.message : 'Permintaan tidak dapat diproses. Cuba semula.'
 }
@@ -115,6 +123,7 @@ function App() {
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('ALL')
   const [recordSearch, setRecordSearch] = useState('')
   const [profileRecord, setProfileRecord] = useState<ExceptionRecord | null>(null)
+  const [freshRecordIds, setFreshRecordIds] = useState<Set<string>>(() => new Set())
   const [newStaffName, setNewStaffName] = useState('')
   const [importNames, setImportNames] = useState('')
   const [staffBusy, setStaffBusy] = useState('')
@@ -130,6 +139,8 @@ function App() {
   const adminTrigger = useRef<HTMLButtonElement>(null)
   const editTrigger = useRef<HTMLElement | null>(null)
   const profileTrigger = useRef<HTMLButtonElement | null>(null)
+  const knownRecordIds = useRef<Set<string>>(new Set())
+  const freshTimer = useRef<number | null>(null)
 
   const activeStaff = useMemo(() => staff.filter((item) => item.active !== false), [staff])
   const selectedDate = admin ? dashboardDate : publicDate
@@ -148,6 +159,20 @@ function App() {
     return { total: totals.reduce((sum, item) => sum + item.total, 0), max: Math.max(1, ...totals.map((item) => item.total)), totals }
   }, [reportRows])
 
+  function applyDashboardRecords(next: ExceptionRecord[], animateNew = false) {
+    const nextIds = new Set(next.map((record) => record.id))
+    const fresh = animateNew ? next.filter((record) => !knownRecordIds.current.has(record.id)).map((record) => record.id) : []
+    knownRecordIds.current = nextIds
+    setRecords(next)
+    if (freshTimer.current !== null) window.clearTimeout(freshTimer.current)
+    if (!fresh.length) {
+      setFreshRecordIds(new Set())
+      return
+    }
+    setFreshRecordIds(new Set(fresh))
+    freshTimer.current = window.setTimeout(() => setFreshRecordIds(new Set()), 720)
+  }
+
   async function loadStaff(adminView = false) {
     setStaffState('loading')
     setStaffError('')
@@ -161,11 +186,11 @@ function App() {
     }
   }
 
-  async function loadDashboard(date = dashboardDate, quiet = false) {
+  async function loadDashboard(date = dashboardDate, quiet = false, animateNew = quiet) {
     if (!quiet) setDashboardBusy(true)
     try {
       const data = await api<{ date: string; records: ExceptionRecord[] }>(`/api/admin/dashboard?date=${encodeURIComponent(date)}`, {}, true)
-      setRecords(data.records)
+      applyDashboardRecords(data.records, animateNew)
     } catch (error) {
       setAdminNotice({ tone: 'error', text: safeError(error) })
     } finally {
@@ -173,11 +198,11 @@ function App() {
     }
   }
 
-  async function loadPublicDashboard(date = publicDate, quiet = false) {
+  async function loadPublicDashboard(date = publicDate, quiet = false, animateNew = quiet) {
     if (!quiet) setDashboardBusy(true)
     try {
       const data = await api<{ date: string; records: ExceptionRecord[] }>(`/api/dashboard?date=${encodeURIComponent(date)}`)
-      setRecords(data.records)
+      applyDashboardRecords(data.records, animateNew)
     } catch (error) {
       setPublicNotice({ tone: 'error', text: safeError(error) })
     } finally {
@@ -199,6 +224,10 @@ function App() {
 
   useEffect(() => {
     void Promise.all([loadStaff(), loadPublicDashboard()])
+  }, [])
+
+  useEffect(() => () => {
+    if (freshTimer.current !== null) window.clearTimeout(freshTimer.current)
   }, [])
 
   useEffect(() => {
@@ -268,7 +297,7 @@ function App() {
         method: 'POST',
         body: JSON.stringify({ staffId: publicStaffId, status: publicStatus, date: publicDate }),
       })
-      await loadPublicDashboard(publicDate)
+      await loadPublicDashboard(publicDate, false, true)
       setPublicNotice({ tone: 'success', text: `Rekod kehadiran ${data.record.staffName} telah diterima.` })
       setPublicOpen(false)
       setPublicStatus('')
@@ -393,7 +422,7 @@ function App() {
         body: JSON.stringify({ staffId: correctionStaffId, status: correctionStatus, date: correctionDate }),
       }, true)
       setDashboardDate(correctionDate)
-      await loadDashboard(correctionDate)
+      await loadDashboard(correctionDate, false, true)
       setCorrectionStatus('')
       setAdminNotice({ tone: 'success', text: 'Rekod kehadiran dikemas kini.' })
     } catch (error) {
@@ -534,11 +563,10 @@ function App() {
               {metricItems.map((item) => <button className="metric" data-active={statusFilter === item.status} data-status={item.status} key={item.status} type="button" aria-pressed={statusFilter === item.status} onClick={() => setStatusFilter(item.status)}><b>{item.total}</b><span>{item.label}</span></button>)}
             </div>
             <div className="dashboard-tools">
-              <label className="visually-hidden" htmlFor="record-search">Cari nama dalam rekod</label>
-              <input id="record-search" type="search" value={recordSearch} onChange={(event) => setRecordSearch(event.target.value)} placeholder="Cari nama dalam rekod" />
-              {admin && <div className="export-actions"><button className="text-button" type="button" onClick={exportDailyCsv}>Muat turun Excel (CSV)</button><button className="text-button" type="button" onClick={() => window.print()}>Cetak / Simpan PDF</button></div>}
+              <label className="search-field" htmlFor="record-search"><span className="visually-hidden">Cari nama dalam rekod</span><Icon name="search" /><input id="record-search" type="search" value={recordSearch} onChange={(event) => setRecordSearch(event.target.value)} placeholder="Cari nama dalam rekod" /></label>
+              {admin && <div className="export-actions"><button className="text-button" type="button" onClick={exportDailyCsv}><Icon name="download" />Muat turun Excel (CSV)</button><button className="text-button" type="button" onClick={() => window.print()}><Icon name="print" />Cetak / Simpan PDF</button></div>}
             </div>
-            {dashboardBusy ? <div className="state-message" role="status">Memuatkan rekod…</div> : <ul className="list">{visibleRecords.length === 0 ? <li className="empty-entry">{records.length === 0 ? 'Tiada rekod bagi tarikh ini.' : 'Tiada rekod sepadan.'}</li> : visibleRecords.map((record) => <li className="entry" key={record.id}><i className="dot" data-status={record.status} aria-hidden="true" /><div><button className="entry-name" type="button" onClick={(event) => { profileTrigger.current = event.currentTarget; setProfileRecord(record) }}><b>{record.staffName}</b></button><small>{statusLabel[record.status]} · {record.date}</small></div><span className="pill" data-status={record.status}>{statusLabel[record.status]}</span>{admin && <div className="entry-actions"><button className="entry-edit" type="button" onClick={(event) => { editTrigger.current = event.currentTarget; setEditing(record) }}>Edit</button><button className="entry-delete" type="button" disabled={correctionBusy} onClick={() => void removeException(record)}>Padam</button></div>}</li>)}</ul>}
+            {dashboardBusy ? <div className="state-message" role="status">Memuatkan rekod…</div> : <ul className="list">{visibleRecords.length === 0 ? <li className="empty-entry">{records.length === 0 ? 'Tiada rekod bagi tarikh ini.' : 'Tiada rekod sepadan.'}</li> : visibleRecords.map((record) => <li className="entry" data-fresh={freshRecordIds.has(record.id) || undefined} key={record.id}><i className="dot" data-status={record.status} aria-hidden="true" /><div><button className="entry-name" type="button" onClick={(event) => { profileTrigger.current = event.currentTarget; setProfileRecord(record) }}><b>{record.staffName}</b></button><small>{statusLabel[record.status]} · {record.date}</small></div><span className="pill" data-status={record.status}>{statusLabel[record.status]}</span>{admin && <div className="entry-actions"><button className="entry-edit" type="button" onClick={(event) => { editTrigger.current = event.currentTarget; setEditing(record) }}>Edit</button><button className="entry-delete" type="button" disabled={correctionBusy} onClick={() => void removeException(record)}>Padam</button></div>}</li>)}</ul>}
           </section>
 
           <aside className="panel aside">
@@ -609,7 +637,7 @@ function App() {
 
       {!admin && publicOpen && <><div className="scrim visible" onClick={closePublic} aria-hidden="true" /><section className="sheet" role="dialog" aria-modal="true" aria-labelledby="public-form-title">
         <div className="handle" />
-        <div className="sheet-top"><h2 id="public-form-title">Rekod Kehadiran</h2><button className="close" type="button" aria-label="Tutup borang" onClick={closePublic}>×</button></div>
+        <div className="sheet-top"><h2 id="public-form-title">Rekod Kehadiran</h2><button className="close" type="button" aria-label="Tutup borang" onClick={closePublic}><Icon name="close" /></button></div>
         <div className="progress" aria-label="Borang satu langkah"><i className="active" /><i className="active" /><i className="active" /></div>
         <form className="sheet-form" onSubmit={submitPublic}>
           {publicNotice?.tone === 'error' && <div className="notice error" role="alert">{publicNotice.text}</div>}
@@ -622,7 +650,7 @@ function App() {
 
       {!admin && adminOpen && <><div className="scrim visible" onClick={closeAdmin} aria-hidden="true" /><section className="sheet" role="dialog" aria-modal="true" aria-labelledby="login-title">
         <div className="handle" />
-        <div className="sheet-top"><h2 id="login-title">Masukkan PIN</h2><button className="close" type="button" aria-label="Tutup panel pentadbir" onClick={closeAdmin}>×</button></div>
+        <div className="sheet-top"><h2 id="login-title">Masukkan PIN</h2><button className="close" type="button" aria-label="Tutup panel pentadbir" onClick={closeAdmin}><Icon name="close" /></button></div>
         <form className="sheet-form" onSubmit={submitLogin}>
           <label className="field" htmlFor="admin-pin">PIN pentadbir<input id="admin-pin" autoFocus type="password" inputMode="numeric" autoComplete="current-password" value={pin} onChange={(event) => setPin(event.target.value)} required /></label>
           {adminNotice?.tone === 'error' && <div className="notice error" role="alert">{adminNotice.text}</div>}
@@ -632,14 +660,14 @@ function App() {
 
       {profileRecord && <><div className="scrim visible" onClick={closeProfile} aria-hidden="true" /><section className="sheet profile-card" role="dialog" aria-modal="true" aria-labelledby="profile-title">
         <div className="handle" />
-        <div className="sheet-top"><h2 id="profile-title">Kad Kehadiran</h2><button className="close" type="button" autoFocus aria-label="Tutup kad kehadiran" onClick={closeProfile}>×</button></div>
+        <div className="sheet-top"><h2 id="profile-title">Kad Kehadiran</h2><button className="close" type="button" autoFocus aria-label="Tutup kad kehadiran" onClick={closeProfile}><Icon name="close" /></button></div>
         <div className="profile-identity"><div className="profile-monogram" data-status={profileRecord.status} aria-hidden="true">{initials(profileRecord.staffName)}</div><div><p className="kicker">Rekod kehadiran</p><h3>{profileRecord.staffName}</h3><span className="pill" data-status={profileRecord.status}>{statusLabel[profileRecord.status]}</span></div></div>
         <dl className="profile-details"><div><dt>Status</dt><dd>{statusDetail[profileRecord.status]}</dd></div><div><dt>Tarikh</dt><dd>{dateCaption(profileRecord.date)}</dd></div></dl>
       </section></>}
 
       {editing && <><div className="scrim visible" onClick={closeEditing} aria-hidden="true" /><section className="sheet" role="dialog" aria-modal="true" aria-labelledby="edit-title">
         <div className="handle" />
-        <div className="sheet-top"><h2 id="edit-title">{editing.staffName}</h2><button className="close" type="button" aria-label="Tutup pembetulan" onClick={closeEditing}>×</button></div>
+        <div className="sheet-top"><h2 id="edit-title">{editing.staffName}</h2><button className="close" type="button" aria-label="Tutup pembetulan" onClick={closeEditing}><Icon name="close" /></button></div>
         <form className="sheet-form" onSubmit={updateException}>
           <label className="field" htmlFor="edit-status">Status<select id="edit-status" name="status" autoFocus defaultValue={editing.status}>{STATUSES.map((status) => <option key={status} value={status}>{statusLabel[status]}</option>)}</select></label>
           <label className="field" htmlFor="edit-date">Tarikh<input id="edit-date" name="date" type="date" defaultValue={editing.date} required /></label>
