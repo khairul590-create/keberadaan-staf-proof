@@ -177,7 +177,7 @@ def run_viewport(browser, base, label, viewport):
     page.get_by_text('Rekod disimpan.').wait_for()
     page.get_by_role('button', name='Laporan').click()
     page.get_by_role('heading', name='Laporan bulanan').wait_for()
-    assert page.get_by_text('Laporan visual').count() == 1
+    page.get_by_text('Laporan visual').wait_for()
     assert page.locator('.report-bars .report-bar').count() == 5
     page.screenshot(path=f'/tmp/keberadaan-monthly-visual-{label}.png', full_page=True)
     report_month = page.locator('.report-panel .mini-field input[type=month]')
