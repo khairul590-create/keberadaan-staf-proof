@@ -1,0 +1,10 @@
+node_modules/
+dist/
+.needmcp/
+evidence/
+.wrangler/
+.env
+.env.*
+!.env.example
+*.log
+*.sqlite
